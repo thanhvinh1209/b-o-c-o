@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Giám Sát & Phát Hiện Thiết Bị Trái Phép IoT</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar / Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <h1>IoT Guard</h1>
+                    <p class="subtitle">Giám sát mạng nội bộ v1.0</p>
+                </div>
+            </div>
+            <div class="system-status-indicator" id="system-status-container">
+                <span class="pulse-dot status-green" id="status-dot"></span>
+                <span class="status-text" id="status-text">Hệ thống: An toàn</span>
+            </div>
+        </header>
+
+        <main class="dashboard-grid">
+            <!-- Left Panel: Network Map Visualization -->
+            <section class="card network-visual-card">
+                <div class="card-header">
+                    <h2><i class="fa-solid fa-network-wired"></i> Bản đồ mạng IoT</h2>
+                    <span class="badge" id="scan-badge">Sẵn sàng</span>
+                </div>
+                <div class="network-map-wrapper">
+                    <!-- Dynamic network visualizer using SVG or DOM nodes -->
+                    <div class="network-canvas" id="network-canvas">
+                        <!-- Centered Router -->
+                        <div class="network-node router-node" id="node-router">
+                            <i class="fa-solid fa-wifi"></i>
+                            <span class="node-label">Gateway Router</span>
+                        </div>
+                        <!-- Connection lines will be drawn here dynamically -->
+                        <div class="connections-container" id="connections-container"></div>
+                        <!-- Active Nodes Container -->
+                        <div class="nodes-container" id="nodes-container"></div>
+                    </div>
+                </div>
+                <div class="visual-legend">
+                    <div class="legend-item"><span class="legend-dot authorized"></span> Thiết bị Hợp lệ</div>
+                    <div class="legend-item"><span class="legend-dot unauthorized"></span> Thiết bị Trái phép (Rogue)</div>
+                    <div class="legend-item"><span class="legend-dot blocked"></span> Đã bị Chặn</div>
+                </div>
+            </section>
+
+            <!-- Right Panel - Top: Controls & Statistics -->
+            <section class="card stats-card">
+                <div class="card-header">
+                    <h2><i class="fa-solid fa-sliders"></i> Bảng điều khiển & Thống kê</h2>
+                </div>
+                <div class="controls-wrapper">
+                    <button class="btn btn-primary" id="btn-scan">
+                        <i class="fa-solid fa-play"></i> Bắt đầu Quét Mạng
+                    </button>
+                    <button class="btn btn-warning" id="btn-simulate-rogue">
+                        <i class="fa-solid fa-skull-crossbones"></i> Giả lập Thiết bị Trái phép
+                    </button>
+                    <button class="btn btn-secondary" id="btn-reset">
+                        <i class="fa-solid fa-rotate-right"></i> Reset Hệ Thống
+                    </button>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <span class="stat-title">Đang kết nối</span>
+                        <span class="stat-value" id="stat-total">0</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-title">Hợp lệ</span>
+                        <span class="stat-value text-green" id="stat-authorized">0</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-title">Trái phép</span>
+                        <span class="stat-value text-red" id="stat-unauthorized">0</span>
+                    </div>
+                </div>
+                <div class="network-info">
+                    <p><strong>Dải IP quét:</strong> <span class="text-highlight" id="info-ip-range">Đang kết nối...</span></p>
+                    <p><strong>Phương pháp phát hiện:</strong> <span class="text-highlight">ARP Request & MAC Whitelisting</span></p>
+                </div>
+            </section>
+
+            <!-- Right Panel - Bottom: Realtime Logs (Terminal) -->
+            <section class="card terminal-card">
+                <div class="card-header">
+                    <h2><i class="fa-solid fa-terminal"></i> Nhật ký hoạt động (Terminal Logs)</h2>
+                    <button class="btn-clear-terminal" id="btn-clear-logs" title="Xóa logs"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+                <div class="terminal-body" id="terminal-logs">
+                    <div class="log-line system-log">[SYSTEM] Nhấn nút "Bắt đầu Quét Mạng" để khởi chạy hệ thống...</div>
+                </div>
+            </section>
+
+            <!-- Full Width Bottom Panel: Device Inventory Table -->
+            <section class="card inventory-card">
+                <div class="card-header">
+                    <h2><i class="fa-solid fa-list-check"></i> Danh sách thiết bị đã phát hiện</h2>
+                </div>
+                <div class="table-wrapper">
+                    <table class="device-table" id="device-table">
+                        <thead>
+                            <tr>
+                                <th>Địa chỉ IP</th>
+                                <th>Địa chỉ MAC</th>
+                                <th>Loại thiết bị</th>
+                                <th>Nhà sản xuất</th>
+                                <th>Trạng thái</th>
+                                <th>Hành động</th>
+                            </tr>
+                        </thead>
+                        <tbody id="device-table-body">
+                            <!-- Rows will be added dynamically by JS -->
+                            <tr id="empty-row">
+                                <td colspan="6" class="text-center text-muted">Chưa có dữ liệu mạng. Vui lòng bấm "Bắt đầu Quét".</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Educational/Theoretical Section -->
+            <section class="card education-card">
+                <div class="card-header">
+                    <h2><i class="fa-solid fa-graduation-cap"></i> Giải thích cơ chế bảo mật dành cho người mới</h2>
+                </div>
+                <div class="education-content">
+                    <div class="step-card">
+                        <div class="step-number">1</div>
+                        <h3>Quét & Nhận Diện (ARP Scan)</h3>
+                        <p>Hệ thống gửi gói tin quảng bá ARP yêu cầu tất cả các IP trong mạng LAN khai báo địa chỉ MAC. Đây là bước thu thập dữ liệu cơ bản để nhận biết ai đang hoạt động trong mạng nội bộ.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-number">2</div>
+                        <h3>Đối chiếu Danh Sách Trắng (Whitelist)</h3>
+                        <p>Các địa chỉ MAC nhận được sẽ được đối chiếu tự động với <strong>Whitelist</strong> đã cấu hình sẵn. Nếu địa chỉ MAC không trùng khớp, thiết bị đó lập tức bị phân loại là <strong>Trái phép</strong>.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-number">3</div>
+                        <h3>Cảnh báo & Phản ứng (Cản trở ARP)</h3>
+                        <p>Khi thiết bị trái phép xuất hiện, quản trị viên nhận được cảnh báo. Ở các dự án nâng cao, hệ thống có thể kích hoạt <strong>ARP Poisoning</strong> để cô lập thiết bị lạ khỏi kết nối Internet.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>Đề tài nghiên cứu khoa học học sinh/sinh viên: <strong>Phát hiện thiết bị trái phép trong mạng nội bộ IoT</strong></p>
+            <p>Phát triển bởi Trợ lý Antigravity &bull; 2026</p>
+        </footer>
+    </div>
+
+    <!-- Alert Modal for Intrusion -->
+    <div class="modal-overlay" id="alert-modal">
+        <div class="modal-content animate-shake">
+            <div class="modal-icon">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h2>CẢNH BÁO XÂM NHẬP!</h2>
+            <p>Phát hiện một thiết bị TRÁI PHÉP (không có trong danh sách trắng) vừa kết nối vào mạng IoT của bạn!</p>
+            <div class="modal-device-info">
+                <p><strong>Địa chỉ IP:</strong> <span id="modal-ip">192.168.1.189</span></p>
+                <p><strong>Địa chỉ MAC:</strong> <span id="modal-mac">bc:d1:d3:ef:22:90</span></p>
+                <p><strong>Nhà sản xuất:</strong> <span id="modal-vendor">Không rõ (Nghi vấn thiết bị hacker)</span></p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-danger" id="btn-modal-block"><i class="fa-solid fa-ban"></i> Chặn Thiết Bị Ngay</button>
+                <button class="btn btn-secondary" id="btn-modal-close">Bỏ qua cảnh báo</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom JS -->
+    <script src="app.js"></script>
+</body>
+</html>
