@@ -92,6 +92,7 @@ def scan_network(ip_range, log_cb=None):
     # Tự động tìm card mạng đang kết nối Internet thật (tránh card ảo VMware, VirtualBox, v.v.)
     best_iface = None
     try:
+        # pyrefly: ignore [missing-import]
         from scapy.all import conf
         route_info = conf.route.route("8.8.8.8")
         best_iface = route_info[0]

@@ -2,8 +2,30 @@
 // CẤU HÌNH DỮ LIỆU THIẾT BỊ
 // ==========================================
 
-// URL Python Backend – chạy từ máy tính cục bộ bằng khoi_chay.bat (quyền Admin)
-const BACKEND_URL = "http://127.0.0.1:5000";
+// Đọc/Ghi URL Python Backend linh hoạt (mặc định localhost hoặc ngrok URL)
+const inputBackendUrl = document.getElementById('input-backend-url');
+const savedBackendUrl = localStorage.getItem('iot_guard_backend_url');
+
+if (savedBackendUrl && inputBackendUrl) {
+    inputBackendUrl.value = savedBackendUrl;
+}
+
+function getBackendUrl() {
+    if (!inputBackendUrl) return "http://127.0.0.1:5000";
+    let url = inputBackendUrl.value.trim();
+    if (!url) url = "http://127.0.0.1:5000";
+    // Xóa dấu / ở cuối nếu có
+    url = url.replace(/\/+$/, '');
+    localStorage.setItem('iot_guard_backend_url', url);
+    return url;
+}
+
+if (inputBackendUrl) {
+    inputBackendUrl.addEventListener('change', () => {
+        const url = getBackendUrl();
+        addLog(`[CONFIG] Đã cập nhật URL Backend Server: <code>${url}</code>`, "success-log");
+    });
+}
 
 
 // ==========================================
@@ -22,7 +44,6 @@ let systemState = {
 // KHỞI TẠO DOM ELEMENTS
 // ==========================================
 const btnScan = document.getElementById('btn-scan');
-const btnSimulateRogue = document.getElementById('btn-simulate-rogue');
 const btnReset = document.getElementById('btn-reset');
 const btnClearLogs = document.getElementById('btn-clear-logs');
 const terminalLogs = document.getElementById('terminal-logs');
@@ -330,7 +351,7 @@ window.toggleBlockDevice = function(mac, shouldBlock) {
 
     // Gửi yêu cầu chặn/bỏ chặn lên Python Backend
     const action = shouldBlock ? 'block' : 'unblock';
-    fetch(`${BACKEND_URL}/${action}?mac=${mac}&ip=${device.ip}`)
+    fetch(`${getBackendUrl()}/${action}?mac=${mac}&ip=${device.ip}`)
         .then(res => res.json())
         .then(data => {
             addLog(`[PYTHON BACKEND] Đã đồng bộ trạng thái ${action} của ${device.ip} lên Server.`, 'success-log');
@@ -370,7 +391,7 @@ btnScan.addEventListener('click', async () => {
     addLog("[SCAN] Đang kết nối tới Python Scanner Backend...", "scan-log");
 
     try {
-        const response = await fetch(`${BACKEND_URL}/scan`);
+        const response = await fetch(`${getBackendUrl()}/scan`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         addLog("[OK] Kết nối Backend thành công! Đang quét mạng thực tế...", "success-log");
@@ -453,22 +474,6 @@ btnScan.addEventListener('click', async () => {
 });
 
 // ==========================================
-// GIẢ LẬP XÂM NHẬP THIẾT BỊ TRÁI PHÉP
-// ==========================================
-btnSimulateRogue.addEventListener('click', () => {
-    fetch(`${BACKEND_URL}/simulate_rogue`)
-        .then(res => res.json())
-        .then(() => {
-            systemState.isRoguePresent = true;
-            addLog("[ALERT] Đã yêu cầu Python Server giả lập chèn thiết bị lạ.", "warning-log");
-            addLog(" → Nhấn 'Bắt đầu Quét Mạng' để phát hiện cảnh báo.", "warning-log");
-        })
-        .catch(() => {
-            addLog("[LỖI] Không thể kết nối Python Server. Hãy chạy khoi_chay.bat trước!", "danger-log");
-        });
-});
-
-// ==========================================
 // CÁC SỰ KIỆN CỦA MODAL & NÚT RESET
 // ==========================================
 btnModalClose.addEventListener('click', () => {
@@ -497,7 +502,7 @@ btnReset.addEventListener('click', () => {
     // Gửi yêu cầu reset lên Python server (bỏ qua lỗi nếu không có backend)
     demoRogueActive = false;
     IS_DEMO_MODE = false;
-    fetch(`${BACKEND_URL}/reset`)
+    fetch(`${getBackendUrl()}/reset`)
         .then(() => {
             terminalLogs.innerHTML = '';
             addLog("[SYSTEM] Đã reset trạng thái Server và Web Dashboard về mặc định.");
@@ -536,13 +541,12 @@ if (terminalInput) {
                     addLog("HƯỚNG DẪN CÁC LỆNH TRONG TERMINAL:", "success-log");
                     addLog("  <strong>help</strong>                      : Hiển thị bảng trợ giúp này.", "system-log");
                     addLog("  <strong>scan</strong>                      : Khởi chạy quét mạng ARP thực tế.", "system-log");
-                    addLog("  <strong>mock &lt;on|off|status&gt;</strong>     : Bật/tắt/xem chế độ giả lập của Server.", "system-log");
-                    addLog("  <strong>simulate</strong>                  : Giả lập chèn thiết bị lạ vào lần quét kế.", "system-log");
                     addLog("  <strong>block &lt;mac|ip&gt;</strong>            : Cô lập thiết bị bằng ARP Poisoning.", "system-log");
                     addLog("  <strong>unblock &lt;mac|ip&gt;</strong>          : Khôi phục kết nối mạng cho thiết bị.", "system-log");
                     addLog("  <strong>whitelist list</strong>            : Xem danh sách thiết bị Whitelist.", "system-log");
                     addLog("  <strong>whitelist add &lt;mac&gt; &lt;tên&gt;</strong>: Thêm thiết bị vào danh sách trắng.", "system-log");
                     addLog("  <strong>whitelist remove &lt;mac&gt;</strong>   : Xóa thiết bị khỏi danh sách trắng.", "system-log");
+                    addLog("  <strong>status</strong>                    : Xem trạng thái hệ thống hiện tại.", "system-log");
                     addLog("  <strong>reset</strong>                     : Khôi phục hệ thống về mặc định.", "system-log");
                     addLog("  <strong>clear</strong>                     : Xóa sạch toàn bộ log trong terminal.", "system-log");
                     addLog("------------------------------------------------------------", "system-log");
@@ -550,10 +554,6 @@ if (terminalInput) {
                     
                 case 'scan':
                     btnScan.click();
-                    break;
-                    
-                case 'simulate':
-                    btnSimulateRogue.click();
                     break;
                     
                 case 'reset':
@@ -604,69 +604,38 @@ if (terminalInput) {
                     }
                     break;
                     
-                case 'mock':
-                    if (IS_DEMO_MODE) {
-                        addLog("[DEMO] Chế độ Demo – Mock Mode chỉ có tác dụng khi chạy Python Backend cục bộ.", "warning-log");
-                        addLog("[DEMO] Máy chủ hiện tại: Chế độ Demo (OFF backend)", "system-log");
-                        break;
-                    }
-                    if (args.length < 1 || args[0].toLowerCase() === 'status') {
-                        fetch(`${BACKEND_URL}/mock_mode`)
-                            .then(res => res.json())
-                            .then(data => {
-                                addLog(`[MOCK MODE] Trạng thái giả lập trên Server hiện tại: ${data.mock_mode ? 'ĐANG BẬT (ON)' : 'ĐANG TẮT (OFF)'}`, "success-log");
-                            })
-                            .catch(() => {
-                                addLog("[LỖI] Không thể kết nối tới Server.", "danger-log");
-                            });
-                    } else {
-                        const sub = args[0].toLowerCase();
-                        if (sub === 'on' || sub === 'off') {
-                            const enable = sub === 'on' ? 'true' : 'false';
-                            fetch(`${BACKEND_URL}/mock_mode?enable=${enable}`)
-                                .then(res => res.json())
-                                .then(data => {
-                                    addLog(`[MOCK MODE] Đã cấu hình Server: ${data.message}`, "success-log");
-                                })
-                                .catch(() => {
-                                    addLog("[LỖI] Không thể kết nối tới Server.", "danger-log");
-                                });
-                        } else {
-                            addLog("[LỖI] Cú pháp lệnh: mock &lt;on|off|status&gt;", "danger-log");
-                        }
-                    }
+                case 'status':
+                    addLog("------------------------------------------------------------", "system-log");
+                    addLog("TRẠNG THÁI HỆ THốNG HIỆN TẠI:", "success-log");
+                    addLog(`  • Đang quét: ${systemState.isScanning ? '✅ Có' : '❌ Không'}`, "system-log");
+                    addLog(`  • Đã quét lần nào: ${systemState.hasScanned ? '✅ Rồi' : '❌ Chưa'}`, "system-log");
+                    addLog(`  • Tổng thiết bị phát hiện: ${systemState.activeDevices.length}`, "system-log");
+                    addLog(`  • Thiết bị bị chặn: ${systemState.blockedDevices.size}`, "system-log");
+                    addLog(`  • Phát hiện trái phép: ${systemState.unauthorizedDetected ? '⚠️ Có' : '✅ Không'}`, "system-log");
+                    addLog(`  • Backend: ${getBackendUrl()}`, "system-log");
+                    addLog("------------------------------------------------------------", "system-log");
                     break;
-                    
+
                 case 'whitelist':
                     if (args.length < 1) {
                         addLog("[LỖI] Cú pháp lệnh: whitelist &lt;list|add|remove&gt;", "danger-log");
                     } else {
                         const action = args[0].toLowerCase();
                         if (action === 'list') {
-                            if (IS_DEMO_MODE) {
-                                // Hiển thị whitelist demo
-                                addLog("------------------------------------------------------------", "system-log");
-                                addLog("DANH SÁCH THIẾT BỊ WHITELIST (CHẾ ĐỘ DEMO):", "success-log");
-                                DEMO_DEVICES.forEach((d, i) => {
-                                    addLog(`  ${i+1}. <code>${d.mac}</code> &rarr; <strong>${d.name}</strong>`, "system-log");
+                            fetch(`${getBackendUrl()}/whitelist/list`)
+                                .then(res => res.json())
+                                .then(data => {
+                                    addLog("------------------------------------------------------------", "system-log");
+                                    addLog("DANH SÁCH THIẾT BỊ WHITELIST (HỢP LỆ) TRÊN SERVER:", "success-log");
+                                    let i = 1;
+                                    for (const [mac, name] of Object.entries(data.whitelist)) {
+                                        addLog(`  ${i++}. <code>${mac}</code> &rarr; <strong>${name}</strong>`, "system-log");
+                                    }
+                                    addLog("------------------------------------------------------------", "system-log");
+                                })
+                                .catch(() => {
+                                    addLog("[LỖI] Không thể kết nối tới Server.", "danger-log");
                                 });
-                                addLog("------------------------------------------------------------", "system-log");
-                            } else {
-                                fetch(`${BACKEND_URL}/whitelist/list`)
-                                    .then(res => res.json())
-                                    .then(data => {
-                                        addLog("------------------------------------------------------------", "system-log");
-                                        addLog("DANH SÁCH THIẾT BỊ WHITELIST (HỢP LỆ) TRÊN SERVER:", "success-log");
-                                        let i = 1;
-                                        for (const [mac, name] of Object.entries(data.whitelist)) {
-                                            addLog(`  ${i++}. <code>${mac}</code> &rarr; <strong>${name}</strong>`, "system-log");
-                                        }
-                                        addLog("------------------------------------------------------------", "system-log");
-                                    })
-                                    .catch(() => {
-                                        addLog("[LỖI] Không thể kết nối tới Server.", "danger-log");
-                                    });
-                            }
                         } else if (action === 'add') {
                             if (args.length < 3) {
                                 addLog("[LỖI] Cú pháp lệnh: whitelist add &lt;mac&gt; &lt;tên thiết bị&gt;", "danger-log");
@@ -676,11 +645,8 @@ if (terminalInput) {
                                 const macRegex = /^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})$/;
                                 if (!macRegex.test(mac)) {
                                     addLog("[LỖI] Định dạng địa chỉ MAC không hợp lệ! Ví dụ mẫu: 0e:0f:73:e7:61:9e", "danger-log");
-                                } else if (IS_DEMO_MODE) {
-                                    addLog(`[DEMO] Đã thêm (giả lập): <code>${mac}</code> &rarr; <strong>${name}</strong>`, "success-log");
-                                    addLog("[DEMO] Lưu ý: Chỉ lưu tạm trong bộ nhớ Demo, không ảnh hưởng với Python Backend.", "warning-log");
                                 } else {
-                                    fetch(`${BACKEND_URL}/whitelist/add?mac=${encodeURIComponent(mac)}&name=${encodeURIComponent(name)}`)
+                                    fetch(`${getBackendUrl()}/whitelist/add?mac=${encodeURIComponent(mac)}&name=${encodeURIComponent(name)}`)
                                         .then(res => res.json())
                                         .then(data => {
                                             if (data.status === 'success') {
@@ -699,27 +665,31 @@ if (terminalInput) {
                                 addLog("[LỖI] Cú pháp lệnh: whitelist remove &lt;mac&gt;", "danger-log");
                             } else {
                                 const mac = args[1];
-                                if (IS_DEMO_MODE) {
-                                    addLog(`[DEMO] Đã xóa (giả lập): <code>${mac}</code> khỏi whitelist Demo.`, "success-log");
-                                } else {
-                                    fetch(`${BACKEND_URL}/whitelist/remove?mac=${encodeURIComponent(mac)}`)
-                                        .then(res => res.json())
-                                        .then(data => {
-                                            if (data.status === 'success') {
-                                                addLog(`[WHITELIST] Đã xóa địa chỉ MAC <code>${mac}</code> khỏi whitelist.`, "success-log");
-                                            } else {
-                                                addLog(`[LỖI] Server báo lỗi: ${data.message}`, "danger-log");
-                                            }
-                                        })
-                                        .catch(() => {
-                                            addLog("[LỖI] Không thể kết nối tới Server.", "danger-log");
-                                        });
-                                }
+                                fetch(`${getBackendUrl()}/whitelist/remove?mac=${encodeURIComponent(mac)}`)
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        if (data.status === 'success') {
+                                            addLog(`[WHITELIST] Đã xóa địa chỉ MAC <code>${mac}</code> khỏi whitelist.`, "success-log");
+                                        } else {
+                                            addLog(`[LỖI] Server báo lỗi: ${data.message}`, "danger-log");
+                                        }
+                                    })
+                                    .catch(() => {
+                                        addLog("[LỖI] Không thể kết nối tới Server.", "danger-log");
+                                    });
                             }
                         } else {
                             addLog("[LỖI] Hành động không rõ. Cú pháp: whitelist &lt;list|add|remove&gt;", "danger-log");
                         }
                     }
+                    break;
+                    
+                case 'reset':
+                    btnReset.click();
+                    break;
+                    
+                case 'clear':
+                    terminalLogs.innerHTML = '';
                     break;
                     
                 default:

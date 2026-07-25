@@ -26,6 +26,11 @@
                     <p class="subtitle">Giám sát mạng nội bộ v1.0</p>
                 </div>
             </div>
+            <div class="backend-url-config" style="display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                <i class="fa-solid fa-server" style="color: #3b82f6;"></i>
+                <span style="font-size: 0.85rem; color: #9ca3af; white-space: nowrap;">Backend Server:</span>
+                <input type="text" id="input-backend-url" value="http://127.0.0.1:5000" placeholder="http://127.0.0.1:5000 hoặc ngrok URL" style="background: #111827; border: 1px solid #374151; color: #10b981; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 0.85rem; width: 260px;" />
+            </div>
             <div class="system-status-indicator" id="system-status-container">
                 <span class="pulse-dot status-green" id="status-dot"></span>
                 <span class="status-text" id="status-text">Hệ thống: An toàn</span>
@@ -68,9 +73,6 @@
                 <div class="controls-wrapper">
                     <button class="btn btn-primary" id="btn-scan">
                         <i class="fa-solid fa-play"></i> Bắt đầu Quét Mạng
-                    </button>
-                    <button class="btn btn-warning" id="btn-simulate-rogue">
-                        <i class="fa-solid fa-skull-crossbones"></i> Giả lập Thiết bị Trái phép
                     </button>
                     <button class="btn btn-secondary" id="btn-reset">
                         <i class="fa-solid fa-rotate-right"></i> Reset Hệ Thống
