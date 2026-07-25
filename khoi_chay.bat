@@ -21,10 +21,18 @@ if '%errorlevel%' NEQ '0' (
     echo ============================================================
     echo   KHOI CHAY HE THONG PHAT HIEN THIET BI IOT TRAI PHEP
     echo ============================================================
-    echo [*] Dang khoi chay Python Backend am tham...
+    :: Tu dong phat hien trinh khoi chay phu hop (py hoac python)
+    where py >nul 2>nul
+    if %errorlevel% equ 0 (
+        set PYTHON_CMD=py
+    ) else (
+        set PYTHON_CMD=python
+    )
+
+    echo [*] Dang khoi chay Python Backend am tham bang lenh: %PYTHON_CMD% scanner.py...
     
     :: Khoi chay scanner.py va an cua so xuong taskbar
-    start "IoT_Python_Backend" /min python scanner.py
+    start "IoT_Python_Backend" /min %PYTHON_CMD% scanner.py
     
     echo [*] Dang doi API Server khoi dong (3 giay)...
     timeout /t 3 /nobreak >nul
