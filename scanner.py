@@ -14,6 +14,10 @@ import time
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+# Cấu hình UTF-8 cho terminal output trên Windows để tránh lỗi UnicodeEncodeError
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 # Kiểm tra xem scapy đã được cài đặt chưa
 try:
     # pyrefly: ignore [missing-import]
@@ -61,13 +65,18 @@ def get_local_ip_range():
         # Mặc định trả về dải mạng phổ biến nếu lỗi
         return "192.168.1.0/24", "127.0.0.1"
 
-def scan_network(ip_range):
+def scan_network(ip_range, log_cb=None):
     """
     Hàm sử dụng Scapy để gửi gói tin ARP Request đến toàn bộ dải mạng
     và nhận về danh sách thiết bị đang hoạt động (IP & MAC).
     """
+    def log(msg, category="system-log"):
+        if log_cb:
+            log_cb(msg, category)
+        print(msg)
+
     if MOCK_MODE:
-        print("[*] CHẾ ĐỘ GIẢ LẬP: Đang mô phỏng quét mạng...")
+        log("[*] CHẾ ĐỘ GIẢ LẬP: Đang mô phỏng quét mạng...", "scan-log")
         time.sleep(1.5)  # Tạo độ trễ quét mạng cho giống thật
         return [
             {"ip": "192.168.1.1", "mac": "00:11:22:33:44:55"},     # Hợp lệ (Router)
@@ -78,7 +87,7 @@ def scan_network(ip_range):
             {"ip": "192.168.1.180", "mac": "11:22:33:aa:bb:cc"}    # TRÁI PHÉP (Thiết bị lạ 2)
         ]
 
-    print(f"[*] Đang khởi tạo quét mạng trên dải IP: {ip_range}...")
+    log(f"[*] Đang khởi tạo quét mạng trên dải IP: {ip_range}...", "scan-log")
     
     # Tự động tìm card mạng đang kết nối Internet thật (tránh card ảo VMware, VirtualBox, v.v.)
     best_iface = None
@@ -86,9 +95,9 @@ def scan_network(ip_range):
         from scapy.all import conf
         route_info = conf.route.route("8.8.8.8")
         best_iface = route_info[0]
-        print(f"[*] Tự động chọn card mạng: {best_iface}")
+        log(f"[*] Tự động chọn card mạng: {best_iface}", "scan-log")
     except Exception as e:
-        print(f"[!] Không thể xác định card mạng tối ưu: {e}. Sẽ dùng mặc định.")
+        log(f"[!] Không thể xác định card mạng tối ưu: {e}. Sẽ dùng mặc định.", "warning-log")
 
     # 1. Tạo gói tin ARP Request: "Ai có IP này thì trả lời tôi"
     # pdst là dải IP đích cần quét
@@ -108,14 +117,14 @@ def scan_network(ip_range):
         else:
             answered_list = srp(arp_request_packet, timeout=3, verbose=False)[0]
     except PermissionError:
-        print("\n[!] LỖI QUYỀN HẠN: Bạn cần chạy Command Prompt / PowerShell bằng quyền Administrator!")
+        log("\n[!] LỖI QUYỀN HẠN: Bạn cần chạy Command Prompt / PowerShell bằng quyền Administrator!", "danger-log")
         if os.name == 'nt':
-            print("    -> Click chuột phải vào CMD/PowerShell và chọn 'Run as Administrator'")
+            log("    -> Click chuột phải vào CMD/PowerShell và chọn 'Run as Administrator'", "danger-log")
         else:
-            print("    -> Chạy lệnh với sudo: sudo python scanner.py")
+            log("    -> Chạy lệnh với sudo: sudo python scanner.py", "danger-log")
         sys.exit(1)
     except Exception as e:
-        print(f"\n[!] Lỗi khi quét mạng: {e}")
+        log(f"\n[!] Lỗi khi quét mạng: {e}", "danger-log")
         return []
 
     # 5. Phân tích phản hồi và lưu kết quả
@@ -143,16 +152,49 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        global INJECT_ROGUE
+        global INJECT_ROGUE, MOCK_MODE
         
         if self.path.startswith('/scan'):
             print("\n[HTTP] Nhận yêu cầu quét mạng từ Web Dashboard...")
+            
+            # Thiết lập header cho SSE (Server-Sent Events) để stream logs thời gian thực
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            
+            def send_event(event_type, message_or_data, level="system-log"):
+                try:
+                    if event_type == "log":
+                        payload = json.dumps({"type": "log", "message": message_or_data, "level": level})
+                    else:
+                        payload = json.dumps({"type": event_type, "data": message_or_data})
+                    self.wfile.write(f"data: {payload}\n\n".encode('utf-8'))
+                    self.wfile.flush()
+                except Exception as e:
+                    print(f"[!] Lỗi khi gửi log stream: {e}")
+            
+            def log_callback(msg, category="system-log"):
+                send_event("log", msg, category)
+                
+            send_event("log", "============================================================", "system-log")
+            send_event("log", "    HE THONG PHAT HIEN THIET BI IOT TRAI PHEP", "system-log")
+            send_event("log", "============================================================", "system-log")
+            
             ip_range, local_ip = get_local_ip_range()
-            devices = scan_network(ip_range)
+            send_event("log", f"[*] IP máy tính của bạn: {local_ip}", "system-log")
+            send_event("log", f"[*] Dải mạng nội bộ: {ip_range}", "system-log")
+            send_event("log", f"[*] Số lượng thiết bị trong Whitelist: {len(WHITELIST_DEVICES)} thiết bị.", "system-log")
+            send_event("log", "------------------------------------------------------------", "system-log")
+            
+            # Quét mạng và truyền callback để stream logs về trình duyệt theo thời gian thực
+            devices = scan_network(ip_range, log_cb=log_callback)
             
             # Nếu chế độ tiêm thiết bị lạ được kích hoạt, chèn thêm 1 thiết bị lạ vào danh sách quét thật
             if INJECT_ROGUE:
-                print("[*] Đang chèn thiết bị lạ giả lập vào kết quả quét thật...")
+                send_event("log", "[*] Đang chèn thiết bị lạ giả lập vào kết quả quét thật...", "warning-log")
                 # Tránh chèn trùng nếu đã có sẵn trong danh sách
                 if not any(d["mac"] == "bc:d1:d3:ef:22:90" for d in devices):
                     devices.append({
@@ -205,6 +247,37 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                     "authorized": authorized
                 })
             
+            send_event("log", "============================================================", "system-log")
+            send_event("log", f"    KET QUA QUET MANG (Tim thay {len(results)} thiet bi dang online)", "system-log")
+            send_event("log", "============================================================", "system-log")
+            send_event("log", f"{'STT':<5}{'Địa chỉ IP':<18}{'Địa chỉ MAC':<20}{'Trạng thái / Tên thiết bị'}", "system-log")
+            send_event("log", "------------------------------------------------------------", "system-log")
+            
+            unauthorized_count = 0
+            for idx, dev in enumerate(results, start=1):
+                mac = dev["mac"]
+                ip = dev["ip"]
+                authorized = dev["authorized"]
+                num_str = f"{idx:<5}"
+                ip_str = f"{ip:<18}"
+                mac_str = f"{mac:<20}"
+                
+                if authorized:
+                    status = f"hợp lệ - {dev['name']}"
+                    send_event("log", f"{num_str}{ip_str}{mac_str}{status}", "success-log")
+                else:
+                    status = "CẢNH BÁO: TRÁI PHÉP (UNKNOWN DEVICE)!"
+                    send_event("log", f"{num_str}{ip_str}{mac_str}{status}", "alert-log")
+                    unauthorized_count += 1
+            
+            send_event("log", "------------------------------------------------------------", "system-log")
+            if unauthorized_count > 0:
+                send_event("log", f"[CẢNH BÁO NGUY HIỂM] Phát hiện {unauthorized_count} thiết bị TRÁI PHÉP kết nối vào mạng!", "danger-log")
+                send_event("log", " -> Hãy kiểm tra lại địa chỉ MAC của thiết bị đó.", "warning-log")
+            else:
+                send_event("log", "[AN TOÀN] Không phát hiện thiết bị lạ nào trong mạng nội bộ.", "success-log")
+            send_event("log", "============================================================", "system-log")
+            
             response_data = {
                 "local_ip": local_ip,
                 "ip_range": ip_range,
@@ -212,12 +285,9 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                 "whitelist": WHITELIST_DEVICES
             }
             
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(json.dumps(response_data).encode('utf-8'))
-            print(f"[HTTP] Đã gửi kết quả {len(results)} thiết bị về Web Dashboard.")
+            # Gửi kết quả quét cuối cùng để vẽ bản đồ
+            send_event("result", response_data)
+            print(f"[HTTP] Đã gửi kết quả {len(results)} thiết bị dạng stream về Web Dashboard.")
             
         elif self.path.startswith('/simulate_rogue'):
             INJECT_ROGUE = True
@@ -276,6 +346,84 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "message": f"Unblocked {mac}"}).encode('utf-8'))
+            
+        elif self.path.startswith('/whitelist/add'):
+            from urllib.parse import urlparse, parse_qs
+            parsed_url = urlparse(self.path)
+            params = parse_qs(parsed_url.query)
+            mac = params.get('mac', [None])[0]
+            name = params.get('name', [None])[0]
+            
+            if mac and name:
+                WHITELIST_DEVICES[mac.lower()] = name
+                print(f"\n[HTTP] Thêm thiết bị vào Whitelist: {mac} -> {name}")
+                status = "success"
+                message = f"Added {mac} to whitelist."
+            else:
+                status = "error"
+                message = "Missing MAC or Name parameters."
+                
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": status, "message": message, "whitelist": WHITELIST_DEVICES}).encode('utf-8'))
+            
+        elif self.path.startswith('/whitelist/remove'):
+            from urllib.parse import urlparse, parse_qs
+            parsed_url = urlparse(self.path)
+            params = parse_qs(parsed_url.query)
+            mac = params.get('mac', [None])[0]
+            
+            if mac:
+                mac_lower = mac.lower()
+                if mac_lower in WHITELIST_DEVICES:
+                    name = WHITELIST_DEVICES.pop(mac_lower)
+                    print(f"\n[HTTP] Xóa thiết bị khỏi Whitelist: {mac} ({name})")
+                    status = "success"
+                    message = f"Removed {mac} from whitelist."
+                else:
+                    status = "error"
+                    message = f"MAC {mac} not found in whitelist."
+            else:
+                status = "error"
+                message = "Missing MAC parameter."
+                
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": status, "message": message, "whitelist": WHITELIST_DEVICES}).encode('utf-8'))
+            
+        elif self.path.startswith('/whitelist/list'):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "whitelist": WHITELIST_DEVICES}).encode('utf-8'))
+            
+        elif self.path.startswith('/mock_mode'):
+            from urllib.parse import urlparse, parse_qs
+            parsed_url = urlparse(self.path)
+            params = parse_qs(parsed_url.query)
+            enable = params.get('enable', [None])[0]
+            
+            if enable == 'true':
+                MOCK_MODE = True
+                print("\n[HTTP] Đã BẬT chế độ giả lập quét mạng (MOCK_MODE = True).")
+                message = "Mock mode enabled."
+            elif enable == 'false':
+                MOCK_MODE = False
+                print("\n[HTTP] Đã TẮT chế độ giả lập quét mạng (MOCK_MODE = False).")
+                message = "Mock mode disabled."
+            else:
+                message = f"Mock mode status: {MOCK_MODE}"
+                
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "mock_mode": MOCK_MODE, "message": message}).encode('utf-8'))
             
         else:
             self.send_response(404)

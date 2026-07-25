@@ -102,8 +102,14 @@
                     <h2><i class="fa-solid fa-terminal"></i> Nhật ký hoạt động (Terminal Logs)</h2>
                     <button class="btn-clear-terminal" id="btn-clear-logs" title="Xóa logs"><i class="fa-solid fa-trash-can"></i></button>
                 </div>
-                <div class="terminal-body" id="terminal-logs">
-                    <div class="log-line system-log">[SYSTEM] Nhấn nút "Bắt đầu Quét Mạng" để khởi chạy hệ thống...</div>
+                <div class="terminal-body" id="terminal-body-wrapper">
+                    <div class="terminal-output" id="terminal-logs">
+                        <div class="log-line system-log">[SYSTEM] Nhấn nút "Bắt đầu Quét Mạng" hoặc nhập lệnh để khởi chạy...</div>
+                    </div>
+                    <div class="terminal-input-line">
+                        <span class="terminal-prompt">&gt;</span>
+                        <input type="text" id="terminal-input" placeholder="Nhập lệnh (gõ 'help' để xem)..." autocomplete="off" />
+                    </div>
                 </div>
             </section>
 

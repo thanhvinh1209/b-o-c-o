@@ -1,78 +1,8 @@
 // ==========================================
 // CẤU HÌNH DỮ LIỆU THIẾT BỊ
 // ==========================================
+// Dữ liệu thiết bị và danh sách trắng sẽ được tải trực tiếp từ Python Scanner Backend.
 
-// Danh sách thiết bị hợp lệ (Whitelist)
-const whitelistDevices = [
-    {
-        ip: "192.168.1.1",
-        mac: "00:11:22:33:44:55",
-        name: "Gateway Router (Trung tâm)",
-        type: "router",
-        icon: "fa-wifi",
-        vendor: "Cisco Systems",
-        authorized: true,
-        angle: 0, // Vị trí trung tâm (đặc biệt)
-        radius: 0
-    },
-    {
-        ip: "192.168.1.12",
-        mac: "24:fc:e5:aa:bb:cc",
-        name: "Smart TV Phòng Khách",
-        type: "smart-tv",
-        icon: "fa-tv",
-        vendor: "LG Electronics",
-        authorized: true,
-        angle: 30, // Góc độ để xếp thành vòng tròn xung quanh router
-        radius: 130
-    },
-    {
-        ip: "192.168.1.45",
-        mac: "fc:db:b3:99:88:77",
-        name: "IP Camera Ban Công",
-        type: "camera",
-        icon: "fa-video",
-        vendor: "Hikvision",
-        authorized: true,
-        angle: 110,
-        radius: 130
-    },
-    {
-        ip: "192.168.1.72",
-        mac: "00:e0:4c:78:90:ab",
-        name: "Bóng Đèn Thông Minh",
-        type: "smart-light",
-        icon: "fa-lightbulb",
-        vendor: "TP-Link",
-        authorized: true,
-        angle: 180,
-        radius: 130
-    },
-    {
-        ip: "192.168.1.100",
-        mac: "aa:bb:cc:dd:ee:ff",
-        name: "Laptop Học Tập (Admin)",
-        type: "laptop",
-        icon: "fa-laptop",
-        vendor: "Apple",
-        authorized: true,
-        angle: 250,
-        radius: 130
-    }
-];
-
-// Thiết bị trái phép để giả lập
-const rogueDevice = {
-    ip: "192.168.1.189",
-    mac: "bc:d1:d3:ef:22:90",
-    name: "Thiết bị lạ (Nghi vấn Hacker)",
-    type: "unknown",
-    icon: "fa-user-secret",
-    vendor: "Generic Linux OS (Tấn công mạng)",
-    authorized: false,
-    angle: 310,
-    radius: 130
-};
 
 // ==========================================
 // ĐỊNH NGHĨA TRẠNG THÁI HỆ THỐNG
@@ -417,56 +347,9 @@ window.toggleBlockDevice = function(mac, shouldBlock) {
 };
 
 // ==========================================
-// HÀM CHẠY QUÉT GIẢ LẬP (FALLBACK)
+// HÀNH VI QUÉT MẠNG THẬT & STREAM LOGS
 // ==========================================
-function runSimulation() {
-    addLog("[SCAN] Bắt đầu khởi chạy bộ quét mạng giả lập...", "scan-log");
-    addLog("[SCAN] Đang gửi các gói tin ARP Request (Broadcast) đến dải IP giả lập...", "scan-log");
-    
-    let currentDeviceIndex = 0;
-    
-    function scanNext() {
-        if (currentDeviceIndex >= whitelistDevices.length) {
-            // Hoàn tất quét
-            systemState.isScanning = false;
-            systemState.hasScanned = true;
-            
-            addLog(`[SCAN SUCCESS] Quét mạng hoàn tất! Phát hiện ${systemState.activeDevices.length} thiết bị đang hoạt động.`, "success-log");
-            addLog(`[SYSTEM] Đối chiếu cơ sở dữ liệu Whitelist: 100% thiết bị đều HỢP LỆ.`, "success-log");
-            
-            updateStatistics();
-            drawConnectionLines(); // Cập nhật lại màu đường kết nối
-            return;
-        }
-
-        const device = whitelistDevices[currentDeviceIndex];
-        
-        setTimeout(() => {
-            // Thêm thiết bị vào danh sách active
-            systemState.activeDevices.push(device);
-            
-            // Nhật ký log quét
-            addLog(`[ARP Response] Phát hiện IP: ${device.ip} | MAC: ${device.mac} (${device.vendor})`, "success-log");
-            addLog(` -> So khớp Whitelist: OK. Đã thêm thiết bị [${device.name}] vào bản đồ mạng.`, "system-log");
-
-            // Cập nhật giao diện
-            createDeviceNode(device);
-            drawConnectionLines();
-            updateDeviceTable();
-            updateStatistics();
-
-            currentDeviceIndex++;
-            scanNext();
-        }, 800); // 800ms phát hiện 1 thiết bị cho trực quan
-    }
-
-    scanNext();
-}
-
-// ==========================================
-// HÀNH VI QUÉT MẠNG THẬT/MÔ PHỎNG
-// ==========================================
-btnScan.addEventListener('click', () => {
+btnScan.addEventListener('click', async () => {
     if (systemState.isScanning) return;
     
     // Reset trạng thái quét mới
@@ -484,128 +367,125 @@ btnScan.addEventListener('click', () => {
     updateDeviceTable();
     updateStatistics();
 
+    terminalLogs.innerHTML = '';
     addLog("[SCAN] Đang kết nối tới Python Scanner Backend (http://127.0.0.1:5000)...", "scan-log");
 
-    fetch("http://127.0.0.1:5000/scan")
-        .then(response => response.json())
-        .then(data => {
-            // Cập nhật dải IP thật lên giao diện
-            document.getElementById('info-ip-range').textContent = data.ip_range;
-            
-            // Xóa log cũ và in log mới giống hệt trên Terminal
-            terminalLogs.innerHTML = '';
-            addLog("============================================================", "system-log");
-            addLog("    HE THONG PHAT HIEN THIET BI TRAI PHEP TRONG MANG IOT", "system-log");
-            addLog("============================================================", "system-log");
-            addLog(`[*] IP máy tính của bạn: ${data.local_ip}`, "system-log");
-            addLog(`[*] Dải mạng nội bộ: ${data.ip_range}`, "system-log");
-            addLog(`[*] Số lượng thiết bị trong Whitelist: ${Object.keys(data.whitelist).length} thiết bị.`, "system-log");
-            addLog("------------------------------------------------------------", "system-log");
-            addLog(`[*] Đang khởi tạo quét mạng trên dải IP: ${data.ip_range}...`, "scan-log");
-            addLog(`[*] Tự động chọn card mạng: Card mạng hoạt động`, "scan-log");
-            addLog("============================================================", "system-log");
-            addLog(`    KET QUA QUET MANG (Tìm thấy ${data.devices.length} thiết bị đang online)`, "system-log");
-            addLog("============================================================", "system-log");
-            addLog(`STT   Địa chỉ IP        Địa chỉ MAC         Trạng thái / Tên thiết bị`, "system-log");
-            addLog("------------------------------------------------------------", "system-log");
+    try {
+        const response = await fetch("http://127.0.0.1:5000/scan");
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
-            // Phân loại thiết bị Router chính và các thiết bị còn lại
-            const nonRouterDevices = data.devices.filter(d => d.type !== 'router');
-            const routerDevice = data.devices.find(d => d.type === 'router') || {
-                ip: "192.168.1.1",
-                mac: "00:11:22:33:44:55",
-                name: "Gateway Router (Trung tâm)",
-                type: "router",
-                icon: "fa-wifi",
-                vendor: "Cisco Systems",
-                authorized: true
-            };
-            
-            // Router trung tâm
-            systemState.activeDevices = [
-                { ...routerDevice, angle: 0, radius: 0 }
-            ];
-            
-            // Định vị trí các thiết bị xung quanh router
-            const count = nonRouterDevices.length;
-            nonRouterDevices.forEach((dev, idx) => {
-                const angle = count > 0 ? (idx * (360 / count)) : 0;
-                systemState.activeDevices.push({
-                    ...dev,
-                    angle: angle,
-                    radius: 130
-                });
-            });
-            
-            // Vẽ bản đồ
-            initNetworkMap();
-            
-            // In chi tiết từng thiết bị ra web terminal
-            let unauthorizedCount = 0;
-            data.devices.forEach((dev, idx) => {
-                const num = (idx + 1).toString().padEnd(4, ' ');
-                const ipStr = dev.ip.padEnd(16, ' ');
-                const macStr = dev.mac.padEnd(18, ' ');
-                
-                let statusStr = "";
-                let logClass = "";
-                if (dev.authorized) {
-                    statusStr = `hợp lệ - ${dev.name}`;
-                    logClass = "success-log";
-                } else {
-                    statusStr = `CẢNH BÁO: TRÁI PHÉP (UNKNOWN DEVICE)!`;
-                    logClass = "alert-log";
-                    unauthorizedCount++;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop(); // Giữ lại phần dòng dang dở ở cuối
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith("data: ")) {
+                    try {
+                        const jsonStr = trimmed.substring(6).trim();
+                        if (!jsonStr) continue;
+                        const payload = JSON.parse(jsonStr);
+
+                        if (payload.type === "log") {
+                            addLog(payload.message, payload.level);
+                        } else if (payload.type === "result") {
+                            const data = payload.data;
+
+                            // Cập nhật dải IP thật lên giao diện
+                            document.getElementById('info-ip-range').textContent = data.ip_range;
+
+                            // Phân loại thiết bị Router chính và các thiết bị còn lại
+                            const nonRouterDevices = data.devices.filter(d => d.type !== 'router');
+                            const routerDevice = data.devices.find(d => d.type === 'router') || {
+                                ip: "192.168.1.1",
+                                mac: "00:11:22:33:44:55",
+                                name: "Gateway Router (Trung tâm)",
+                                type: "router",
+                                icon: "fa-wifi",
+                                vendor: "Cisco Systems",
+                                authorized: true
+                            };
+
+                            // Router trung tâm
+                            systemState.activeDevices = [
+                                { ...routerDevice, angle: 0, radius: 0 }
+                            ];
+
+                            // Định vị trí các thiết bị xung quanh router
+                            const count = nonRouterDevices.length;
+                            nonRouterDevices.forEach((dev, idx) => {
+                                const angle = count > 0 ? (idx * (360 / count)) : 0;
+                                systemState.activeDevices.push({
+                                    ...dev,
+                                    angle: angle,
+                                    radius: 130
+                                });
+                            });
+
+                            // Vẽ bản đồ
+                            initNetworkMap();
+
+                            systemState.isScanning = false;
+                            systemState.hasScanned = true;
+
+                            // Kiểm tra và báo động thiết bị trái phép
+                            const unauthorizedDevices = data.devices.filter(d => !d.authorized);
+                            if (unauthorizedDevices.length > 0) {
+                                systemState.unauthorizedDetected = true;
+                                playAlarmSound();
+
+                                // Show modal với thiết bị lạ đầu tiên
+                                const rogue = unauthorizedDevices[0];
+                                modalIp.textContent = rogue.ip;
+                                modalMac.textContent = rogue.mac;
+                                modalVendor.textContent = rogue.vendor;
+
+                                btnModalBlock.onclick = function() {
+                                    toggleBlockDevice(rogue.mac, true);
+                                };
+
+                                alertModal.classList.add('active');
+                            }
+
+                            updateDeviceTable();
+                            updateStatistics();
+                            drawConnectionLines();
+                        }
+                    } catch (e) {
+                        console.error("Lỗi khi giải mã dòng dữ liệu JSON:", e, trimmed);
+                    }
                 }
-                addLog(`${num}  ${ipStr}  ${macStr}  ${statusStr}`, logClass);
-            });
-            
-            addLog("------------------------------------------------------------", "system-log");
-            
-            systemState.isScanning = false;
-            systemState.hasScanned = true;
-            
-            // Kiểm tra và báo động thiết bị trái phép
-            const unauthorizedDevices = data.devices.filter(d => !d.authorized);
-            if (unauthorizedDevices.length > 0) {
-                systemState.unauthorizedDetected = true;
-                playAlarmSound();
-                
-                addLog(`[CẢNH BÁO NGUY HIỂM] Phát hiện ${unauthorizedCount} thiết bị TRÁI PHÉP kết nối vào mạng!`, "danger-log");
-                addLog(" -> Hãy kiểm tra lại địa chỉ MAC của thiết bị đó.", "warning-log");
-                
-                // Show modal với thiết bị lạ đầu tiên
-                const rogue = unauthorizedDevices[0];
-                modalIp.textContent = rogue.ip;
-                modalMac.textContent = rogue.mac;
-                modalVendor.textContent = rogue.vendor;
-                
-                btnModalBlock.onclick = function() {
-                    toggleBlockDevice(rogue.mac, true);
-                };
-                
-                alertModal.classList.add('active');
-            } else {
-                addLog("[AN TOÀN] Không phát hiện thiết bị lạ nào trong mạng nội bộ.", "success-log");
             }
-            addLog("============================================================", "system-log");
-            
-            updateDeviceTable();
-            updateStatistics();
-            drawConnectionLines();
-        })
-        .catch(err => {
-            addLog("[WARNING] Không kết nối được API Python (Server chưa bật).", "warning-log");
-            addLog(" -> Tự động chuyển hướng sang chế độ GIẢ LẬP...", "warning-log");
-            runSimulation();
-        });
+        }
+    } catch (err) {
+        console.error("Lỗi kết nối API:", err);
+        systemState.isScanning = false;
+        scanBadge.textContent = "Lỗi kết nối";
+        scanBadge.className = "badge danger";
+
+        addLog("[LỖI] Không thể kết nối tới Python Scanner Backend (Server chưa bật hoặc bị chặn).", "danger-log");
+        addLog(" -> Hướng dẫn: Vui lòng khởi chạy file 'khoi_chay.bat' bằng quyền Administrator để bật hệ thống thực.", "warning-log");
+        alert("Lỗi: Không kết nối được Python Backend. Vui lòng chạy file 'khoi_chay.bat' dưới quyền Administrator.");
+
+        updateStatistics();
+    }
 });
 
 // ==========================================
-// GIẢ LẬP XÂM NHẬP THIẾT BỊ TRÁI PHÉP
+// GIẢ LẬP XÂM NHẬP THIẾT BỊ TRÁI PHÉP (TRÊN BACKEND)
 // ==========================================
 btnSimulateRogue.addEventListener('click', () => {
-    // Thử gửi yêu cầu giả lập xâm nhập lên Python server trước
+    // Gửi yêu cầu giả lập xâm nhập lên Python server
     fetch("http://127.0.0.1:5000/simulate_rogue")
         .then(res => res.json())
         .then(data => {
@@ -615,37 +495,8 @@ btnSimulateRogue.addEventListener('click', () => {
             alert("Đã kích hoạt giả lập trên Server! Hãy nhấn nút 'Bắt đầu Quét Mạng' để phát hiện cảnh báo.");
         })
         .catch(err => {
-            // Fallback sang giả lập hoàn toàn trên Web nếu không kết nối được Python
-            if (!systemState.hasScanned && !systemState.isScanning) {
-                alert("Vui lòng nhấn 'Bắt đầu Quét Mạng' trước khi giả lập thiết bị lạ kết nối.");
-                return;
-            }
-            if (systemState.isRoguePresent) {
-                alert("Thiết bị trái phép đã có mặt trong mạng rồi!");
-                return;
-            }
-
-            systemState.isRoguePresent = true;
-            addLog(`[ALERT] Phát hiện lưu lượng mạng bất thường tại IP ${rogueDevice.ip}...`, 'warning-log');
-            
-            setTimeout(() => {
-                systemState.activeDevices.push(rogueDevice);
-                
-                addLog(`[ARP Response] IP: ${rogueDevice.ip} | MAC: ${rogueDevice.mac} (Nhà sản xuất: Không rõ)`, 'alert-log');
-                addLog(`[CẢNH BÁO NGUY HIỂM] Địa chỉ MAC ${rogueDevice.mac} KHÔNG nằm trong danh sách thiết bị được phép!`, 'alert-log');
-                addLog(`[SYSTEM ALERT] Thiết bị trái phép [${rogueDevice.name}] đang truy cập bất hợp pháp!`, 'alert-log');
-
-                playAlarmSound();
-                createDeviceNode(rogueDevice);
-                drawConnectionLines();
-                updateDeviceTable();
-                updateStatistics();
-
-                modalIp.textContent = rogueDevice.ip;
-                modalMac.textContent = rogueDevice.mac;
-                modalVendor.textContent = rogueDevice.vendor;
-                alertModal.classList.add('active');
-            }, 1200);
+            addLog("[LỖI] Không thể kết nối tới Python Server để cấu hình giả lập thiết bị lạ.", "danger-log");
+            alert("Lỗi: Không kết nối được Python Backend. Vui lòng khởi chạy server trước.");
         });
 });
 
@@ -655,10 +506,6 @@ btnSimulateRogue.addEventListener('click', () => {
 btnModalClose.addEventListener('click', () => {
     alertModal.classList.remove('active');
     addLog(`[UI] Đã bỏ qua cảnh báo. Thiết bị lạ vẫn đang kết nối trái phép!`, 'warning-log');
-});
-
-btnModalBlock.addEventListener('click', () => {
-    toggleBlockDevice(rogueDevice.mac, true);
 });
 
 // Reset hệ thống về ban đầu
@@ -687,6 +534,206 @@ btnReset.addEventListener('click', () => {
         })
         .catch(err => {
             terminalLogs.innerHTML = '';
-            addLog("[SYSTEM] Hệ thống (giả lập) đã được khôi phục về trạng thái mặc định ban đầu.");
+            addLog("[LỖI] Không thể kết nối tới Python Server để reset hệ thống.", "danger-log");
+            alert("Lỗi: Không kết nối được Python Backend. Vui lòng bật Server.");
         });
 });
+
+// ==========================================
+// THỰC THI LỆNH TRÊN INTERACTIVE TERMINAL
+// ==========================================
+const terminalInput = document.getElementById('terminal-input');
+
+if (terminalInput) {
+    terminalInput.addEventListener('keydown', async (event) => {
+        if (event.key === 'Enter') {
+            const rawCmd = terminalInput.value;
+            const cmd = rawCmd.trim();
+            terminalInput.value = ''; // Xóa sạch ô nhập
+            
+            if (!cmd) return;
+            
+            // Hiển thị lệnh vừa gõ lên terminal logs
+            addLog(`<span style="color: #fff; font-weight: bold;">&gt; ${cmd}</span>`, 'system-log');
+            
+            // Tách các thành phần của lệnh
+            const parts = cmd.split(/\s+/);
+            const primaryCmd = parts[0].toLowerCase();
+            const args = parts.slice(1);
+            
+            switch (primaryCmd) {
+                case 'help':
+                    addLog("------------------------------------------------------------", "system-log");
+                    addLog("HƯỚNG DẪN CÁC LỆNH TRONG TERMINAL:", "success-log");
+                    addLog("  <strong>help</strong>                      : Hiển thị bảng trợ giúp này.", "system-log");
+                    addLog("  <strong>scan</strong>                      : Khởi chạy quét mạng ARP thực tế.", "system-log");
+                    addLog("  <strong>mock &lt;on|off|status&gt;</strong>     : Bật/tắt/xem chế độ giả lập của Server.", "system-log");
+                    addLog("  <strong>simulate</strong>                  : Giả lập chèn thiết bị lạ vào lần quét kế.", "system-log");
+                    addLog("  <strong>block &lt;mac|ip&gt;</strong>            : Cô lập thiết bị bằng ARP Poisoning.", "system-log");
+                    addLog("  <strong>unblock &lt;mac|ip&gt;</strong>          : Khôi phục kết nối mạng cho thiết bị.", "system-log");
+                    addLog("  <strong>whitelist list</strong>            : Xem danh sách thiết bị Whitelist.", "system-log");
+                    addLog("  <strong>whitelist add &lt;mac&gt; &lt;tên&gt;</strong>: Thêm thiết bị vào danh sách trắng.", "system-log");
+                    addLog("  <strong>whitelist remove &lt;mac&gt;</strong>   : Xóa thiết bị khỏi danh sách trắng.", "system-log");
+                    addLog("  <strong>reset</strong>                     : Khôi phục hệ thống về mặc định.", "system-log");
+                    addLog("  <strong>clear</strong>                     : Xóa sạch toàn bộ log trong terminal.", "system-log");
+                    addLog("------------------------------------------------------------", "system-log");
+                    break;
+                    
+                case 'scan':
+                    btnScan.click();
+                    break;
+                    
+                case 'simulate':
+                    btnSimulateRogue.click();
+                    break;
+                    
+                case 'reset':
+                    btnReset.click();
+                    break;
+                    
+                case 'clear':
+                    terminalLogs.innerHTML = '';
+                    break;
+                    
+                case 'block':
+                    if (args.length < 1) {
+                        addLog("[LỖI] Cú pháp lệnh: block &lt;mac|ip&gt;", "danger-log");
+                    } else {
+                        const target = args[0].toLowerCase();
+                        const device = systemState.activeDevices.find(d => 
+                            d.mac.toLowerCase() === target || d.ip === target
+                        );
+                        if (device) {
+                            if (device.type === 'router') {
+                                addLog("[LỖI] Không thể chặn Gateway Router trung tâm!", "danger-log");
+                            } else {
+                                toggleBlockDevice(device.mac, true);
+                            }
+                        } else {
+                            addLog(`[LỖI] Không tìm thấy thiết bị online nào có IP/MAC: ${target}`, "danger-log");
+                        }
+                    }
+                    break;
+                    
+                case 'unblock':
+                    if (args.length < 1) {
+                        addLog("[LỖI] Cú pháp lệnh: unblock &lt;mac|ip&gt;", "danger-log");
+                    } else {
+                        const target = args[0].toLowerCase();
+                        const device = systemState.activeDevices.find(d => 
+                            d.mac.toLowerCase() === target || d.ip === target
+                        );
+                        if (device) {
+                            toggleBlockDevice(device.mac, false);
+                        } else {
+                            if (systemState.blockedDevices.has(target) || systemState.blockedDevices.has(target.toUpperCase())) {
+                                toggleBlockDevice(target, false);
+                            } else {
+                                addLog(`[LỖI] Thiết bị IP/MAC '${target}' không nằm trong danh sách chặn.`, "danger-log");
+                            }
+                        }
+                    }
+                    break;
+                    
+                case 'mock':
+                    if (args.length < 1 || args[0].toLowerCase() === 'status') {
+                        fetch("http://127.0.0.1:5000/mock_mode")
+                            .then(res => res.json())
+                            .then(data => {
+                                addLog(`[MOCK MODE] Trạng thái giả lập trên Server hiện tại: ${data.mock_mode ? 'ĐANG BẬT (ON)' : 'ĐANG TẮT (OFF)'}`, "success-log");
+                            })
+                            .catch(err => {
+                                addLog("[LỖI] Không thể kết nối tới Server để lấy trạng thái mock mode.", "danger-log");
+                            });
+                    } else {
+                        const sub = args[0].toLowerCase();
+                        if (sub === 'on' || sub === 'off') {
+                            const enable = sub === 'on' ? 'true' : 'false';
+                            fetch(`http://127.0.0.1:5000/mock_mode?enable=${enable}`)
+                                .then(res => res.json())
+                                .then(data => {
+                                    addLog(`[MOCK MODE] Đã cấu hình Server: ${data.message}`, "success-log");
+                                })
+                                .catch(err => {
+                                    addLog("[LỖI] Không thể kết nối tới Server để cấu hình mock mode.", "danger-log");
+                                });
+                        } else {
+                            addLog("[LỖI] Cú pháp lệnh: mock &lt;on|off|status&gt;", "danger-log");
+                        }
+                    }
+                    break;
+                    
+                case 'whitelist':
+                    if (args.length < 1) {
+                        addLog("[LỖI] Cú pháp lệnh: whitelist &lt;list|add|remove&gt;", "danger-log");
+                    } else {
+                        const action = args[0].toLowerCase();
+                        if (action === 'list') {
+                            fetch("http://127.0.0.1:5000/whitelist/list")
+                                .then(res => res.json())
+                                .then(data => {
+                                    addLog("------------------------------------------------------------", "system-log");
+                                    addLog("DANH SÁCH THIẾT BỊ WHITELIST (HỢP LỆ) TRÊN SERVER:", "success-log");
+                                    let idx = 1;
+                                    for (const [mac, name] of Object.entries(data.whitelist)) {
+                                        addLog(`  ${idx++}. <code>${mac}</code> &rarr; <strong>${name}</strong>`, "system-log");
+                                    }
+                                    addLog("------------------------------------------------------------", "system-log");
+                                })
+                                .catch(err => {
+                                    addLog("[LỖI] Không thể kết nối tới Server để lấy danh sách Whitelist.", "danger-log");
+                                });
+                        } else if (action === 'add') {
+                            if (args.length < 3) {
+                                addLog("[LỖI] Cú pháp lệnh: whitelist add &lt;mac&gt; &lt;tên thiết bị&gt;", "danger-log");
+                            } else {
+                                const mac = args[1];
+                                const name = args.slice(2).join(" ");
+                                const macRegex = /^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})$/;
+                                if (!macRegex.test(mac)) {
+                                    addLog("[LỖI] Định dạng địa chỉ MAC không hợp lệ! Ví dụ mẫu: 0e:0f:73:e7:61:9e", "danger-log");
+                                } else {
+                                    fetch(`http://127.0.0.1:5000/whitelist/add?mac=${encodeURIComponent(mac)}&name=${encodeURIComponent(name)}`)
+                                        .then(res => res.json())
+                                        .then(data => {
+                                            if (data.status === 'success') {
+                                                addLog(`[WHITELIST] Đã thêm thành công: <code>${mac}</code> &rarr; <strong>${name}</strong>`, "success-log");
+                                            } else {
+                                                addLog(`[LỖI] Server báo lỗi: ${data.message}`, "danger-log");
+                                            }
+                                        })
+                                        .catch(err => {
+                                            addLog("[LỖI] Không thể kết nối tới Server để cập nhật whitelist.", "danger-log");
+                                        });
+                                }
+                            }
+                        } else if (action === 'remove') {
+                            if (args.length < 2) {
+                                addLog("[LỖI] Cú pháp lệnh: whitelist remove &lt;mac&gt;", "danger-log");
+                            } else {
+                                const mac = args[1];
+                                fetch(`http://127.0.0.1:5000/whitelist/remove?mac=${encodeURIComponent(mac)}`)
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        if (data.status === 'success') {
+                                            addLog(`[WHITELIST] Đã xóa địa chỉ MAC <code>${mac}</code> khỏi whitelist.`, "success-log");
+                                        } else {
+                                            addLog(`[LỖI] Server báo lỗi: ${data.message}`, "danger-log");
+                                        }
+                                    })
+                                    .catch(err => {
+                                        addLog("[LỖI] Không thể kết nối tới Server để cập nhật whitelist.", "danger-log");
+                                    });
+                            }
+                        } else {
+                            addLog("[LỖI] Hành động không rõ. Cú pháp: whitelist &lt;list|add|remove&gt;", "danger-log");
+                        }
+                    }
+                    break;
+                    
+                default:
+                    addLog(`[LỖI] Lệnh '${primaryCmd}' không hợp lệ. Gõ 'help' để xem danh sách lệnh.`, "danger-log");
+            }
+        }
+    });
+}
