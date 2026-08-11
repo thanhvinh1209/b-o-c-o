@@ -96,6 +96,19 @@
                     <p><strong>Dải IP quét:</strong> <span class="text-highlight" id="info-ip-range">Đang kết nối...</span></p>
                     <p><strong>Phương pháp phát hiện:</strong> <span class="text-highlight">ARP Request & MAC Whitelisting</span></p>
                 </div>
+                <div class="telegram-config" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <h3 id="tg-config-toggle" onclick="toggleTelegramConfig()" style="font-size: 0.9rem; color: var(--text-highlight); margin-bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 6px; font-weight: 600; cursor: pointer; user-select: none;">
+                        <span style="display:flex;align-items:center;gap:6px;"><i class="fa-brands fa-telegram" style="color: #229ED9; font-size: 1.1rem;"></i> Cấu hình Telegram Alerts</span>
+                        <i id="tg-toggle-icon" class="fa-solid fa-chevron-down" style="font-size: 0.75rem; color: var(--text-muted); transition: transform 0.3s;"></i>
+                    </h3>
+                    <div id="tg-config-body" style="display: none; flex-direction: column; gap: 8px; margin-top: 10px;">
+                        <input type="text" id="input-tg-token" placeholder="Telegram Bot Token (e.g. 123456:ABC...)" style="background: #111827; border: 1px solid #374151; color: #f3f4f6; padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; font-family: monospace; width: 100%;" />
+                        <input type="text" id="input-tg-chatid" placeholder="Telegram Chat ID (e.g. 987654321)" style="background: #111827; border: 1px solid #374151; color: #f3f4f6; padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; font-family: monospace; width: 100%;" />
+                        <button id="btn-tg-test" onclick="testTelegramConnection()" style="background: linear-gradient(135deg, #229ED9, #1a7ab5); color: white; border: none; padding: 7px 12px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; transition: opacity 0.2s;">
+                            <i class="fa-solid fa-paper-plane"></i> Gửi tin nhắn thử nghiệm
+                        </button>
+                    </div>
+                </div>
             </section>
 
             <!-- Right Panel - Bottom: Realtime Logs (Terminal) -->

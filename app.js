@@ -10,6 +10,84 @@ if (savedBackendUrl && inputBackendUrl) {
     inputBackendUrl.value = savedBackendUrl;
 }
 
+// Cấu hình Telegram Alerts
+const inputTgToken = document.getElementById('input-tg-token');
+const inputTgChatId = document.getElementById('input-tg-chatid');
+
+if (inputTgToken) {
+    inputTgToken.value = localStorage.getItem('tg_bot_token') || '';
+    inputTgToken.addEventListener('input', () => {
+        localStorage.setItem('tg_bot_token', inputTgToken.value.trim());
+    });
+}
+
+if (inputTgChatId) {
+    inputTgChatId.value = localStorage.getItem('tg_chat_id') || '';
+    inputTgChatId.addEventListener('input', () => {
+        localStorage.setItem('tg_chat_id', inputTgChatId.value.trim());
+    });
+}
+
+async function sendTelegramNotification(message) {
+    const token = (inputTgToken ? inputTgToken.value.trim() : null) || localStorage.getItem('tg_bot_token');
+    const chatId = (inputTgChatId ? inputTgChatId.value.trim() : null) || localStorage.getItem('tg_chat_id');
+    if (!token || !chatId) return;
+
+    try {
+        const url = `https://api.telegram.org/bot${token}/sendMessage`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: chatId,
+                text: message,
+                parse_mode: 'HTML'
+            })
+        });
+        return res.ok;
+    } catch (e) {
+        console.error('Lỗi gửi Telegram:', e);
+        return false;
+    }
+}
+
+window.testTelegramConnection = async function() {
+    const token = inputTgToken ? inputTgToken.value.trim() : '';
+    const chatId = inputTgChatId ? inputTgChatId.value.trim() : '';
+
+    if (!token || !chatId) {
+        addLog('[TELEGRAM] ❌ Vui lòng nhập đủ Bot Token và Chat ID trước!', 'danger-log');
+        return;
+    }
+
+    localStorage.setItem('tg_bot_token', token);
+    localStorage.setItem('tg_chat_id', chatId);
+
+    const btn = document.getElementById('btn-tg-test');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang gửi...'; }
+
+    addLog('[TELEGRAM] Đang gửi tin nhắn thử nghiệm tới Telegram...', 'scan-log');
+
+    const ok = await sendTelegramNotification(`🔔 <b>IoT Guard - Kết nối thành công!</b>\n\nBot Telegram đã được cấu hình xong và đang hoạt động bình thường.\n✅ Từ giờ bạn sẽ nhận được thông báo realtime khi:\n• Phát hiện thiết bị xâm nhập\n• Cấp phép / hủy cấp phép thiết bị\n• Cô lập hoặc mở chặn thiết bị`);
+
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Gửi tin nhắn thử nghiệm'; }
+
+    if (ok) {
+        addLog('[TELEGRAM] ✅ Gửi thành công! Kiểm tra điện thoại của bạn ngay nhé.', 'success-log');
+    } else {
+        addLog('[TELEGRAM] ❌ Gửi thất bại! Kiểm tra lại Bot Token và Chat ID có đúng không.', 'danger-log');
+    }
+};
+
+window.toggleTelegramConfig = function() {
+    const body = document.getElementById('tg-config-body');
+    const icon = document.getElementById('tg-toggle-icon');
+    if (!body) return;
+    const isHidden = body.style.display === 'none';
+    body.style.display = isHidden ? 'flex' : 'none';
+    if (icon) icon.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+};
+
 function getBackendUrl() {
     if (!inputBackendUrl) return "http://127.0.0.1:5000";
     let url = inputBackendUrl.value.trim();
@@ -39,6 +117,9 @@ let systemState = {
     isRoguePresent: false,
     blockedDevices: new Set()
 };
+
+let demoRogueActive = false;
+let IS_DEMO_MODE = false;
 
 // ==========================================
 // KHỞI TẠO DOM ELEMENTS
@@ -129,6 +210,40 @@ btnClearLogs.addEventListener('click', () => {
 // ==========================================
 let svgConnections = null;
 
+// Tính toán vị trí góc và bán kính phân lớp để tránh chồng chéo khi có nhiều thiết bị
+function getDevicePosition(index, totalCount) {
+    let radius = 120;
+    let angle = 0;
+    
+    if (totalCount <= 6) {
+        // Chỉ có 1 vòng duy nhất
+        radius = 110;
+        angle = (index * 360) / totalCount;
+    } else if (totalCount <= 12) {
+        // Phân làm 2 vòng (Vòng trong: 4, Vòng ngoài: còn lại)
+        if (index < 4) {
+            radius = 70;
+            angle = (index * 360) / 4;
+        } else {
+            radius = 120;
+            angle = ((index - 4) * 360) / (totalCount - 4) + 45; // Lệch góc để so le
+        }
+    } else {
+        // Phân làm 3 vòng (Vòng trong: 4, Vòng giữa: 6, Vòng ngoài: còn lại)
+        if (index < 4) {
+            radius = 65;
+            angle = (index * 360) / 4;
+        } else if (index < 10) {
+            radius = 105;
+            angle = ((index - 4) * 360) / 6 + 30;
+        } else {
+            radius = 145;
+            angle = ((index - 10) * 360) / (totalCount - 10) + 15;
+        }
+    }
+    return { angle, radius };
+}
+
 function initNetworkMap() {
     // Xóa hết nodes cũ
     nodesContainer.innerHTML = '';
@@ -168,13 +283,16 @@ function createDeviceNode(device) {
     // Tính toán tọa độ left và top tương đối (%) so với tâm
     // Canvas có kích thước tùy biến, chúng ta đặt tâm là 50%
     const leftOffset = 50 + (device.radius / 3) * Math.cos(angleRad); // Chia 3 để thu nhỏ tỷ lệ hiển thị
-    const topOffset = 50 + (device.radius / 2.5) * Math.sin(angleRad);
+    const topOffset = 50 + (device.radius / 3.2) * Math.sin(angleRad); // Chia 3.2 để tránh tràn viền dọc
     
     node.style.left = `${leftOffset}%`;
     node.style.top = `${topOffset}%`;
     
     // Icon thiết bị
-    const iconClass = isBlocked ? 'fa-ban' : device.icon;
+    let iconClass = isBlocked ? 'fa-ban' : device.icon;
+    if (device.authorized && iconClass === 'fa-user-secret') {
+        iconClass = 'fa-laptop';
+    }
     node.innerHTML = `<i class="fa-solid ${iconClass}"></i><span class="node-label">${device.name}</span>`;
     
     // Sự kiện click để xem chi tiết
@@ -284,10 +402,15 @@ function updateDeviceTable() {
             actionBtn = `<span class="text-muted" style="font-size: 11px;">Gateway Chính</span>`;
         }
 
+        let displayIcon = device.icon;
+        if (device.authorized && displayIcon === 'fa-user-secret') {
+            displayIcon = 'fa-laptop';
+        }
+
         tr.innerHTML = `
             <td><strong>${device.ip}</strong></td>
             <td><code>${device.mac}</code></td>
-            <td><i class="fa-solid ${device.icon}"></i> ${device.name}</td>
+            <td><i class="fa-solid ${displayIcon}"></i> ${device.name}</td>
             <td>${device.vendor}</td>
             <td>${statusBadge}</td>
             <td>${actionBtn}</td>
@@ -353,9 +476,13 @@ window.toggleBlockDevice = function(mac, shouldBlock) {
         addLog(`[MITIGATION] Đang kích hoạt ARP Poisoning để cô lập thiết bị ${device.ip}...`, 'warning-log');
         addLog(`[ARP SPOOF] Gửi gói tin giả mạo tới Gateway: Báo ${device.ip} đang ở địa chỉ MAC ảo (Dead MAC)`, 'scan-log');
         addLog(`[SUCCESS] Đã cắt kết nối internet thành công của thiết bị ${device.ip} (${device.mac})!`, 'success-log');
+        
+        sendTelegramNotification(`🚫 <b>[CÔ LẬP THIẾT BỊ]</b>\nĐã ngắt kết nối mạng của thiết bị:\n• <b>IP:</b> ${device.ip}\n• <b>MAC:</b> ${device.mac}\n• <b>Trạng thái:</b> Kích hoạt chặn ARP Spoofing.`);
     } else {
         systemState.blockedDevices.delete(mac);
         addLog(`[MITIGATION] Đã ngưng ARP Poisoning. Thiết bị ${device.ip} được khôi phục kết nối.`, 'system-log');
+        
+        sendTelegramNotification(`🔓 <b>[MỞ CHẶN THIẾT BỊ]</b>\nKhôi phục kết nối mạng cho thiết bị:\n• <b>IP:</b> ${device.ip}\n• <b>MAC:</b> ${device.mac}`);
     }
 
     // Gửi yêu cầu chặn/bỏ chặn lên Python Backend
@@ -404,12 +531,18 @@ window.authorizeDevice = function(mac, defaultName) {
     if (device) {
         device.authorized = true;
         device.name = deviceName;
+        // Đổi hình hacker thành hình máy tính lập tức trên giao diện
+        if (device.icon === 'fa-user-secret') {
+            device.icon = 'fa-laptop';
+        }
     }
     systemState.blockedDevices.delete(mac);
     
     initNetworkMap();
     updateDeviceTable();
     updateStatistics();
+    
+    sendTelegramNotification(`🟢 <b>[WHITELIST - CẤP PHÉP]</b>\nThiết bị đã được phê duyệt:\n• <b>IP:</b> ${device ? device.ip : 'N/A'}\n• <b>MAC:</b> ${mac}\n• <b>Tên đặt:</b> ${deviceName}`);
     
     const btnModalAuth = document.getElementById('btn-modal-authorize');
     if (alertModal.classList.contains('active')) {
@@ -433,11 +566,18 @@ window.unauthorizeDevice = function(mac) {
         
     if (device) {
         device.authorized = false;
+        // Đổi icon về lại hình thám tử/hacker (trạng thái trái phép ban đầu)
+        if (device.icon === 'fa-laptop' && device.type === 'unknown') {
+            device.icon = 'fa-user-secret';
+        }
+        device.name = "Thiết bị lạ (UNKNOWN DEVICE)";
     }
     
     initNetworkMap();
     updateDeviceTable();
     updateStatistics();
+    
+    sendTelegramNotification(`🔴 <b>[WHITELIST - HỦY CẤP PHÉP]</b>\nĐã thu hồi quyền truy cập của thiết bị:\n• <b>IP:</b> ${device ? device.ip : 'N/A'}\n• <b>MAC:</b> ${mac}`);
 };
 
 // ==========================================
@@ -460,6 +600,8 @@ btnScan.addEventListener('click', async () => {
     updateStatistics();
     terminalLogs.innerHTML = '';
     addLog("[SCAN] Đang kết nối tới Python Scanner Backend...", "scan-log");
+    
+    sendTelegramNotification(`🔍 <b>[BẮT ĐẦU QUÉT MẠNG]</b>\nHệ thống bắt đầu quét các thiết bị trong mạng LAN/Wi-Fi thực tế...`);
 
     try {
         const response = await fetch(`${getBackendUrl()}/scan`);
@@ -497,10 +639,11 @@ btnScan.addEventListener('click', async () => {
                         systemState.activeDevices = [{ ...routerDevice, angle: 0, radius: 0 }];
                         const count = nonRouterDevices.length;
                         nonRouterDevices.forEach((dev, i) => {
+                            const pos = getDevicePosition(i, count);
                             systemState.activeDevices.push({
                                 ...dev,
-                                angle: count > 0 ? (i * 360 / count) : 0,
-                                radius: 130
+                                angle: pos.angle,
+                                radius: pos.radius
                             });
                         });
                         initNetworkMap();
@@ -520,6 +663,10 @@ btnScan.addEventListener('click', async () => {
                                 btnModalAuthorize.onclick = () => authorizeDevice(rogue.mac, rogue.name);
                             }
                             alertModal.classList.add('active');
+                            
+                            sendTelegramNotification(`⚠️ <b>[CẢNH BÁO XÂM NHẬP]</b>\nPhát hiện thiết bị TRÁI PHÉP kết nối vào mạng IoT!\n\n• <b>IP:</b> ${rogue.ip}\n• <b>MAC:</b> ${rogue.mac}\n• <b>Nhà sản xuất:</b> ${rogue.vendor}`);
+                        } else {
+                            sendTelegramNotification(`✅ <b>[QUÉT MẠNG HOÀN TẤT]</b>\nKhông phát hiện mối đe dọa nào. Mạng an toàn.\n• <b>Tổng thiết bị online:</b> ${count + 1}`);
                         }
                         updateDeviceTable();
                         updateStatistics();
@@ -539,12 +686,17 @@ btnScan.addEventListener('click', async () => {
     } catch (err) {
         console.error("Scan error:", err);
         systemState.isScanning = false;
-        scanBadge.textContent = "Lỗi kết nối";
-        scanBadge.className = "badge danger";
-        addLog("[LỖI] Không thể kết nối tới Python Scanner Backend!", "danger-log");
-        addLog("➡ Hướng dẫn: Mở Command Prompt bằng quyền Administrator, vào thư mục d:\\iot rồi chạy: khoi_chay.bat", "warning-log");
-        addLog("➡ Hoặc chạy trực tiếp: py -u scanner.py (trong thư mục d:\\iot)", "warning-log");
-        updateStatistics();
+        
+        if (confirm("Không kết nối được tới Python Backend (hoặc do chạy trên GitHub Pages).\n\nBạn có muốn chuyển sang CHẾ ĐỘ GIẢ LẬP (Demo Mode) để chạy thử giao diện không?")) {
+            runDemoSimulation();
+        } else {
+            scanBadge.textContent = "Lỗi kết nối";
+            scanBadge.className = "badge danger";
+            addLog("[LỖI] Không thể kết nối tới Python Scanner Backend!", "danger-log");
+            addLog("➡ Hướng dẫn: Mở Command Prompt bằng quyền Administrator, vào thư mục d:\\iot rồi chạy: khoi_chay.bat", "warning-log");
+            addLog("➡ Hoặc chạy trực tiếp: py -u scanner.py (trong thư mục d:\\iot)", "warning-log");
+            updateStatistics();
+        }
     }
 });
 
@@ -586,6 +738,8 @@ btnReset.addEventListener('click', () => {
             terminalLogs.innerHTML = '';
             addLog("[SYSTEM] Hệ thống đã được khôi phục về trạng thái mặc định.");
         });
+        
+    sendTelegramNotification(`🔄 <b>[RESET HỆ THỐNG]</b>\nĐã reset trạng thái giám sát về mặc định.`);
 });
 
 // ==========================================
@@ -772,4 +926,142 @@ if (terminalInput) {
             }
         }
     });
+}
+
+// ==========================================
+// CHẾ ĐỘ GIẢ LẬP (DEMO MODE) CHO GITHUB PAGES
+// ==========================================
+async function runDemoSimulation() {
+    systemState.isScanning = true;
+    systemState.hasScanned = false;
+    systemState.activeDevices = [];
+    systemState.isRoguePresent = false;
+    systemState.unauthorizedDetected = false;
+    systemState.blockedDevices.clear();
+
+    scanBadge.textContent = "Đang quét (Demo)...";
+    scanBadge.className = "badge scanning";
+    initNetworkMap();
+    updateDeviceTable();
+    updateStatistics();
+    
+    terminalLogs.innerHTML = '';
+    addLog("[DEMO] Đang khởi chạy quét mạng GIẢ LẬP (Không kết nối Backend)...", "scan-log");
+    
+    sendTelegramNotification(`🔍 <b>[BẮT ĐẦU QUÉT MẠNG - GIẢ LẬP]</b>\nHệ thống bắt đầu quét ở chế độ Demo (không kết nối Backend)...`);
+    
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    
+    await sleep(800);
+    addLog("[DEMO] Địa chỉ IP máy tính giả lập: 192.168.1.15", "system-log");
+    addLog("[DEMO] Dải mạng quét giả lập: 192.168.1.0/24", "system-log");
+    addLog("[DEMO] Khởi động gửi gói tin ARP request broadcast...", "scan-log");
+    
+    await sleep(1000);
+    addLog("[+] Đang nhận phản hồi ARP từ các thiết bị...", "scan-log");
+    addLog("[+] Đang nhận diện nhà sản xuất (OUI lookup)...", "system-log");
+    
+    await sleep(1200);
+    document.getElementById('info-ip-range').textContent = "192.168.1.0/24 (Giả lập)";
+    
+    const mockDevices = [
+        {
+            ip: "192.168.1.1",
+            mac: "00:11:22:33:44:55",
+            name: "Gateway Router (Trung tâm)",
+            type: "router",
+            icon: "fa-wifi",
+            vendor: "Cisco Systems",
+            authorized: true
+        },
+        {
+            ip: "192.168.1.10",
+            mac: "40:23:43:af:80:83",
+            name: "Máy tính của tôi",
+            type: "laptop",
+            icon: "fa-laptop",
+            vendor: "Intel Corp",
+            authorized: true
+        },
+        {
+            ip: "192.168.1.15",
+            mac: "0e:0f:73:e7:61:9e",
+            name: "Điện thoại của tôi",
+            type: "phone",
+            icon: "fa-mobile-screen-button",
+            vendor: "Apple Inc (iPhone)",
+            authorized: true
+        },
+        {
+            ip: "192.168.1.120",
+            mac: "ec:fa:bc:11:22:33",
+            name: "Bóng đèn thông minh",
+            type: "iot",
+            icon: "fa-microchip",
+            vendor: "Tuya Smart (IoT)",
+            authorized: true
+        },
+        {
+            ip: "192.168.1.189",
+            mac: "bc:d1:d3:ef:22:90",
+            name: "IP Camera lạ",
+            type: "camera",
+            icon: "fa-video",
+            vendor: "Generic IP Camera (Rogue)",
+            authorized: false
+        }
+    ];
+
+    const routerDevice = mockDevices.find(d => d.type === 'router');
+    const nonRouterDevices = mockDevices.filter(d => d.type !== 'router');
+    
+    systemState.activeDevices = [{ ...routerDevice, angle: 0, radius: 0 }];
+    const count = nonRouterDevices.length;
+    nonRouterDevices.forEach((dev, i) => {
+        const pos = getDevicePosition(i, count);
+        systemState.activeDevices.push({
+            ...dev,
+            angle: pos.angle,
+            radius: pos.radius
+        });
+    });
+
+    initNetworkMap();
+    systemState.isScanning = false;
+    systemState.hasScanned = true;
+    
+    addLog("============================================================", "system-log");
+    addLog("    KET QUA QUET GIẢ LẬP (Tìm thấy 5 thiết bị online)", "system-log");
+    addLog("============================================================", "system-log");
+    addLog("1    192.168.1.1       00:11:22:33:44:55   hợp lệ - Gateway Router", "success-log");
+    addLog("2    192.168.1.10      40:23:43:af:80:83   hợp lệ - Máy tính của tôi", "success-log");
+    addLog("3    192.168.1.15      0e:0f:73:e7:61:9e   hợp lệ - Điện thoại của tôi", "success-log");
+    addLog("4    192.168.1.120     ec:fa:bc:11:22:33   hợp lệ - Bóng đèn thông minh", "success-log");
+    addLog("5    192.168.1.189     bc:d1:d3:ef:22:90   CẢNH BÁO: TRÁI PHÉP (UNKNOWN DEVICE)!", "alert-log");
+    addLog("------------------------------------------------------------", "system-log");
+    addLog("[CẢNH BÁO NGUY HIỂM] Phát hiện 1 thiết bị TRÁI PHÉP kết nối vào mạng!", "danger-log");
+    addLog(" -> Hãy kiểm tra lại địa chỉ MAC của thiết bị đó.", "warning-log");
+    addLog("============================================================", "system-log");
+
+    systemState.unauthorizedDetected = true;
+    playAlarmSound();
+
+    const rogue = mockDevices.find(d => !d.authorized);
+    modalIp.textContent = rogue.ip;
+    modalMac.textContent = rogue.mac;
+    modalVendor.textContent = rogue.vendor;
+    btnModalBlock.onclick = () => toggleBlockDevice(rogue.mac, true);
+    
+    const btnModalAuthorize = document.getElementById('btn-modal-authorize');
+    if (btnModalAuthorize) {
+        btnModalAuthorize.onclick = () => authorizeDevice(rogue.mac, rogue.name);
+    }
+    
+    alertModal.classList.add('active');
+    
+    sendTelegramNotification(`⚠️ <b>[CẢNH BÁO XÂM NHẬP - GIẢ LẬP]</b>\nPhát hiện thiết bị giả lập TRÁI PHÉP kết nối vào mạng IoT!\n\n• <b>IP:</b> ${rogue.ip}\n• <b>MAC:</b> ${rogue.mac}\n• <b>Nhà sản xuất:</b> ${rogue.vendor}`);
+
+    updateDeviceTable();
+    updateStatistics();
+    drawConnectionLines();
 }

@@ -245,10 +245,10 @@ def identify_device_info(ip, mac, is_authorized, custom_whitelist_name=None):
     # 7. Mặc định cho các thiết bị kết nối còn lại trong mạng
     else:
         dtype = "unknown"
-        icon = "fa-cubes-stacked"
-        type_label = "Thiết bị kết nối Smart Network"
+        icon = "fa-laptop" if is_authorized else "fa-user-secret"
+        type_label = "Thiết bị hợp lệ (Smart Device)" if is_authorized else "Thiết bị lạ (UNKNOWN DEVICE)"
         if vendor == "Generic Network Vendor":
-            vendor = "Generic Smart Device"
+            vendor = "Authorized Device" if is_authorized else "Generic Network Vendor"
 
     # Đặt tên hiển thị chi tiết
     if custom_whitelist_name:
