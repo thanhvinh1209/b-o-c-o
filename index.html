@@ -186,9 +186,12 @@
                 <p><strong>Địa chỉ MAC:</strong> <span id="modal-mac">bc:d1:d3:ef:22:90</span></p>
                 <p><strong>Nhà sản xuất:</strong> <span id="modal-vendor">Không rõ (Nghi vấn thiết bị hacker)</span></p>
             </div>
-            <div class="modal-actions">
-                <button class="btn btn-danger" id="btn-modal-block"><i class="fa-solid fa-ban"></i> Chặn Thiết Bị Ngay</button>
-                <button class="btn btn-secondary" id="btn-modal-close">Bỏ qua cảnh báo</button>
+            <div class="modal-actions" style="display: flex; flex-direction: column; gap: 8px;">
+                <button class="btn btn-primary" id="btn-modal-authorize" style="width: 100%; justify-content: center;"><i class="fa-solid fa-user-check"></i> Cấp Phép & Thêm Vào Whitelist</button>
+                <div style="display: flex; gap: 8px; width: 100%;">
+                    <button class="btn btn-danger" id="btn-modal-block" style="flex: 1; justify-content: center;"><i class="fa-solid fa-ban"></i> Chặn Ngay</button>
+                    <button class="btn btn-secondary" id="btn-modal-close" style="flex: 1; justify-content: center;">Bỏ qua</button>
+                </div>
             </div>
         </div>
     </div>

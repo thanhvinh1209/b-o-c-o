@@ -263,16 +263,25 @@ function updateDeviceTable() {
             statusBadge = '<span class="status-pill unauthorized"><i class="fa-solid fa-circle-exclamation"></i> Trái phép</span>';
         }
 
-        // Action button
+        // Action buttons
         let actionBtn = '';
         if (device.type !== 'router') {
-            if (isBlocked) {
-                actionBtn = `<button class="btn-action btn-unblock" onclick="toggleBlockDevice('${device.mac}', false)"><i class="fa-solid fa-unlock"></i> Bỏ chặn</button>`;
+            if (device.authorized) {
+                actionBtn = `<button class="btn-action btn-unauthorize" onclick="unauthorizeDevice('${device.mac}')"><i class="fa-solid fa-user-minus"></i> Hủy cấp phép</button>`;
             } else {
-                actionBtn = `<button class="btn-action" onclick="toggleBlockDevice('${device.mac}', true)"><i class="fa-solid fa-ban"></i> Cô lập</button>`;
+                const escapedName = (device.name || '').replace(/'/g, "\\'");
+                const authBtn = `<button class="btn-action btn-authorize" onclick="authorizeDevice('${device.mac}', '${escapedName}')"><i class="fa-solid fa-user-check"></i> Cấp phép</button>`;
+                
+                if (isBlocked) {
+                    const unblockBtn = `<button class="btn-action btn-unblock" onclick="toggleBlockDevice('${device.mac}', false)"><i class="fa-solid fa-unlock"></i> Bỏ chặn</button>`;
+                    actionBtn = authBtn + unblockBtn;
+                } else {
+                    const blockBtn = `<button class="btn-action" onclick="toggleBlockDevice('${device.mac}', true)"><i class="fa-solid fa-ban"></i> Cô lập</button>`;
+                    actionBtn = authBtn + blockBtn;
+                }
             }
         } else {
-            actionBtn = `<span class="text-muted" style="font-size: 11px;">Không có</span>`;
+            actionBtn = `<span class="text-muted" style="font-size: 11px;">Gateway Chính</span>`;
         }
 
         tr.innerHTML = `
@@ -370,6 +379,68 @@ window.toggleBlockDevice = function(mac, shouldBlock) {
 };
 
 // ==========================================
+// TÍNH NĂNG CẤP PHÉP / HỦY CẤP PHÉP THIẾT BỊ (WHITELIST)
+// ==========================================
+window.authorizeDevice = function(mac, defaultName) {
+    const device = systemState.activeDevices.find(d => d.mac === mac);
+    const initialName = defaultName || (device ? device.name : 'Thiết bị hợp lệ');
+    
+    const customName = prompt(`CẤP PHÉP THIẾT BỊ (${mac})\nNhập tên gợi nhớ cho thiết bị này để đưa vào Whitelist:`, initialName);
+    if (!customName || !customName.trim()) return;
+    
+    const deviceName = customName.trim();
+    
+    // Đồng bộ lên Python Backend
+    fetch(`${getBackendUrl()}/whitelist/add?mac=${encodeURIComponent(mac)}&name=${encodeURIComponent(deviceName)}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                addLog(`[WHITELIST] Đã thêm địa chỉ MAC <code>${mac}</code> (${deviceName}) vào danh sách hợp lệ.`, 'success-log');
+            }
+        })
+        .catch(() => {});
+        
+    // Cập nhật trạng thái cục bộ ngay lập tức
+    if (device) {
+        device.authorized = true;
+        device.name = deviceName;
+    }
+    systemState.blockedDevices.delete(mac);
+    
+    initNetworkMap();
+    updateDeviceTable();
+    updateStatistics();
+    
+    const btnModalAuth = document.getElementById('btn-modal-authorize');
+    if (alertModal.classList.contains('active')) {
+        alertModal.classList.remove('active');
+    }
+};
+
+window.unauthorizeDevice = function(mac) {
+    const device = systemState.activeDevices.find(d => d.mac === mac);
+    if (!confirm(`Bạn có chắc muốn HỦY CẤP PHÉP cho thiết bị ${mac} (${device ? device.name : ''})?`)) return;
+    
+    // Gửi yêu cầu xóa khỏi Whitelist lên Python Backend
+    fetch(`${getBackendUrl()}/whitelist/remove?mac=${encodeURIComponent(mac)}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                addLog(`[WHITELIST] Đã xóa địa chỉ MAC <code>${mac}</code> khỏi danh sách Whitelist hợp lệ.`, 'warning-log');
+            }
+        })
+        .catch(() => {});
+        
+    if (device) {
+        device.authorized = false;
+    }
+    
+    initNetworkMap();
+    updateDeviceTable();
+    updateStatistics();
+};
+
+// ==========================================
 // HÀNH VI QUÉT MẠNG THẬT (kết nối Python Backend)
 // ==========================================
 btnScan.addEventListener('click', async () => {
@@ -444,6 +515,10 @@ btnScan.addEventListener('click', async () => {
                             modalMac.textContent = rogue.mac;
                             modalVendor.textContent = rogue.vendor;
                             btnModalBlock.onclick = () => toggleBlockDevice(rogue.mac, true);
+                            const btnModalAuthorize = document.getElementById('btn-modal-authorize');
+                            if (btnModalAuthorize) {
+                                btnModalAuthorize.onclick = () => authorizeDevice(rogue.mac, rogue.name);
+                            }
                             alertModal.classList.add('active');
                         }
                         updateDeviceTable();

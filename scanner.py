@@ -41,8 +41,234 @@ INJECT_ROGUE = False
 # 1. Danh sách Whitelist (Các địa chỉ MAC của thiết bị hợp lệ trong nhà bạn)
 WHITELIST_DEVICES = {
     "40:23:43:af:80:83": "Máy tính của tôi",
-    "0e:0f:73:e7:61:9e":"điện thoại của tôi"
+    "0e:0f:73:e7:61:9e": "Điện thoại của tôi"
 }
+
+# ==========================================
+# CƠ SỞ DỮ LIỆU & HÀM NHẬN DẠNG THIẾT BỊ (FINGERPRINTING)
+# ==========================================
+
+# Bảng tra cứu OUI (3 cụm đầu địa chỉ MAC -> Nhà sản xuất)
+OUI_DATABASE = {
+    "40:23:43": "Intel / PC",
+    "00:1c:c0": "Intel Corp",
+    "00:e0:4c": "Realtek Semi",
+    "0e:0f:73": "Apple Inc (iPhone/iPad)",
+    "00:0c:e6": "Apple Inc",
+    "a4:c3:f0": "Apple Inc",
+    "ac:bc:b5": "Apple Inc",
+    "14:7d:da": "Apple Inc",
+    "dc:a6:32": "Raspberry Pi Trading",
+    "b8:27:eb": "Raspberry Pi Foundation",
+    "24:0a:c4": "Espressif Systems (IoT ESP32)",
+    "18:fe:34": "Espressif Systems (IoT ESP8266)",
+    "bc:dd:c2": "Tuya Smart (IoT Device)",
+    "ec:fa:bc": "Tuya Smart (IoT Device)",
+    "54:5a:a6": "Xiaomi Electronics",
+    "68:c6:3a": "Xiaomi Communications",
+    "34:ce:00": "Xiaomi Communications",
+    "00:11:22": "Cisco Systems / Router",
+    "14:cc:20": "TP-Link Technologies",
+    "50:c7:bf": "TP-Link Technologies",
+    "e8:48:b8": "TP-Link Technologies",
+    "c8:3a:35": "Tenda Technologies",
+    "00:1d:7e": "D-Link Corporation",
+    "44:47:cc": "Hikvision (IP Camera)",
+    "38:a2:8c": "Dahua Tech (IP Camera)",
+    "bc:d1:d3": "Generic IP Camera (Rogue)",
+    "aa:bb:cc": "Samsung Electronics",
+    "24:fc:e5": "LG Electronics (Smart TV)",
+    "99:88:77": "Unknown IoT Board",
+    "11:22:33": "Generic Network Adapter",
+    "00:11:32": "Synology NAS",
+}
+
+def is_randomized_mac(mac):
+    """
+    Kiểm tra xem MAC có phải địa chỉ MAC ngẫu nhiên riêng tư (Private Wi-Fi MAC)
+    được sử dụng trên iOS (iPhone/iPad), Android 10+ và Windows 10/11 hay không.
+    """
+    try:
+        clean = mac.lower().replace("-", "").replace(":", "")
+        if len(clean) >= 2:
+            first_byte = int(clean[:2], 16)
+            # Theo chuẩn IEEE 802, bit thứ 2 của byte đầu (0x02) xác định Locally Administered MAC
+            return bool(first_byte & 2)
+    except Exception:
+        pass
+    return False
+
+def get_http_banner(ip, port=80):
+    """Gửi yêu cầu HTTP thử lấy HTML Title để đoán loại thiết bị/router/camera"""
+    try:
+        import urllib.request
+        import re
+        url = f"http://{ip}:{port}/"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=0.4) as response:
+            html = response.read(1024).decode('utf-8', errors='ignore')
+            match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
+            if match:
+                title = match.group(1).strip()
+                if title:
+                    return title
+            server = response.headers.get('Server')
+            if server:
+                return server
+    except Exception:
+        pass
+    return None
+
+def get_mac_vendor(mac):
+    """Xác định nhà sản xuất từ địa chỉ MAC (OUI Lookup)"""
+    mac_clean = mac.lower().replace("-", ":")
+    prefix = mac_clean[:8]  # 3 octet đầu
+    
+    if prefix in OUI_DATABASE:
+        return OUI_DATABASE[prefix]
+    
+    # Nếu là MAC riêng tư ngẫu nhiên của điện thoại/máy tính
+    if is_randomized_mac(mac):
+        return "Apple / Android / Windows (Private Wi-Fi MAC)"
+
+    # Tra cứu online dự phòng với timeout 0.8s
+    try:
+        import urllib.request
+        url = f"https://api.maclookup.app/v2/macs/{mac_clean}/vendor/name"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=0.8) as response:
+            vendor = response.read().decode('utf-8').strip()
+            if vendor and vendor != "N/A":
+                return vendor
+    except Exception:
+        pass
+
+    return "Generic Network Vendor"
+
+def get_hostname(ip):
+    """Lấy tên thiết bị (Hostname) qua Reverse DNS / NetBIOS"""
+    try:
+        socket.setdefaulttimeout(0.5)
+        hostname, _, _ = socket.gethostbyaddr(ip)
+        return hostname
+    except Exception:
+        return None
+
+def check_open_ports(ip):
+    """Quét nhanh các cổng dịch vụ đặc trưng (Fingerprinting)"""
+    open_ports = []
+    # 554: RTSP Camera, 9100: Printer, 1883: MQTT IoT, 445: Windows SMB, 80/8080: Web Admin, 62078: Apple Sync, 22: SSH
+    target_ports = [554, 9100, 1883, 445, 80, 8080, 62078, 22]
+    for port in target_ports:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.1)
+            result = s.connect_ex((ip, port))
+            s.close()
+            if result == 0:
+                open_ports.append(port)
+        except Exception:
+            pass
+    return open_ports
+
+def identify_device_info(ip, mac, is_authorized, custom_whitelist_name=None):
+    """
+    Hàm tổng hợp tự động xác định loại thiết bị từ IP và MAC
+    """
+    vendor = get_mac_vendor(mac)
+    hostname = get_hostname(ip)
+    open_ports = check_open_ports(ip)
+    random_mac = is_randomized_mac(mac)
+    http_title = None
+    if 80 in open_ports or 8080 in open_ports:
+        http_title = get_http_banner(ip, 80 if 80 in open_ports else 8080)
+        
+    dtype = "unknown"
+    icon = "fa-network-wired"
+    type_label = "Thiết bị mạng"
+    
+    # 1. Gateway Router (IP kết thúc bằng .1 hoặc Web Title chứa Router)
+    if ip.endswith(".1") or (http_title and any(k in http_title.lower() for k in ["router", "gateway", "tp-link", "tenda", "fpt", "viettel", "vnpt"])):
+        dtype = "router"
+        icon = "fa-wifi"
+        type_label = "Gateway Router (Trung tâm)"
+        if vendor == "Generic Network Vendor" or "Vendor" in vendor:
+            vendor = "Router Gateway (Cisco/TP-Link/VNPT)"
+
+    # 2. IP Camera (Cổng RTSP 554 hoặc Vendor/Title chứa Hikvision/Dahua/Camera)
+    elif 554 in open_ports or any(k in vendor.lower() for k in ["hikvision", "dahua", "camera"]) or (http_title and "camera" in http_title.lower()):
+        dtype = "camera"
+        icon = "fa-video"
+        type_label = "IP Camera (Giám sát)"
+        if vendor == "Generic Network Vendor":
+            vendor = "Hikvision / Dahua / IP Camera"
+
+    # 3. Máy in (Cổng 9100 hoặc Vendor HP/Epson/Canon/Brother)
+    elif 9100 in open_ports or any(k in vendor.lower() for k in ["hp", "epson", "canon", "brother"]):
+        dtype = "printer"
+        icon = "fa-print"
+        type_label = "Máy in (Network Printer)"
+        if vendor == "Generic Network Vendor":
+            vendor = "HP / Epson / Canon Printer"
+
+    # 4. Thiết bị IoT Smart Home (Cổng MQTT 1883 hoặc Vendor Espressif/Tuya/Sonoff/Shelly)
+    elif 1883 in open_ports or any(k in vendor.lower() for k in ["espressif", "esp32", "esp8266", "tuya", "sonoff", "shelly"]):
+        dtype = "iot"
+        icon = "fa-microchip"
+        type_label = "Thiết bị IoT Smart Home"
+        if vendor == "Generic Network Vendor":
+            vendor = "Espressif / Tuya Smart IoT"
+
+    # 5. Máy tính PC / Laptop (Windows SMB 445/139, Intel/Realtek/Dell/Lenovo/Asus/Acer)
+    elif 445 in open_ports or any(k in vendor.lower() for k in ["intel", "realtek", "dell", "lenovo", "asus", "acer", "microsoft"]) or \
+         (hostname and any(h in hostname.lower() for h in ["desktop", "laptop", "pc", "win"])):
+        dtype = "laptop"
+        icon = "fa-laptop"
+        type_label = "Máy tính PC / Laptop"
+        if vendor == "Generic Network Vendor":
+            vendor = "Intel / Realtek PC"
+
+    # 6. Điện thoại / Máy tính bảng (iOS, Android, Cổng Apple 62078, MAC Ngẫu nhiên bảo mật hoặc Vendor Apple/Samsung/Xiaomi/Oppo/Vivo)
+    elif 62078 in open_ports or random_mac or any(k in vendor.lower() for k in ["apple", "samsung", "xiaomi", "huawei", "oppo", "vivo", "realme"]) or \
+         (hostname and any(h in hostname.lower() for h in ["iphone", "android", "galaxy", "ipad", "phone"])):
+        dtype = "phone"
+        icon = "fa-mobile-screen-button"
+        if random_mac:
+            type_label = "Điện thoại (MAC Ngẫu nhiên)"
+            if vendor == "Generic Network Vendor":
+                vendor = "Apple / Android (Private Wi-Fi MAC)"
+        else:
+            type_label = "Điện thoại Smartphone"
+            if vendor == "Generic Network Vendor":
+                vendor = "Apple / Samsung Mobile"
+
+    # 7. Mặc định cho các thiết bị kết nối còn lại trong mạng
+    else:
+        dtype = "unknown"
+        icon = "fa-cubes-stacked"
+        type_label = "Thiết bị kết nối Smart Network"
+        if vendor == "Generic Network Vendor":
+            vendor = "Generic Smart Device"
+
+    # Đặt tên hiển thị chi tiết
+    if custom_whitelist_name:
+        display_name = custom_whitelist_name
+    elif hostname:
+        display_name = f"{hostname}"
+    elif is_authorized:
+        display_name = f"Thiết bị hợp lệ ({type_label})"
+    else:
+        display_name = f"{type_label}"
+
+    return {
+        "name": display_name,
+        "type": dtype,
+        "icon": icon,
+        "vendor": vendor,
+        "hostname": hostname or "N/A",
+        "ports": open_ports
+    }
+
 
 def get_local_ip_range():
     """
@@ -203,48 +429,26 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                         "mac": "bc:d1:d3:ef:22:90"
                     })
             
-            # Khớp các thiết bị quét được với thông tin mô tả chi tiết
+            # Khớp các thiết bị quét được với thông tin mô tả chi tiết từ hàm Fingerprinting
             results = []
+            send_event("log", "[*] Đang phân tích thông tin thiết bị (OUI Lookup, Hostname, Ports)...", "scan-log")
             for dev in devices:
                 mac = dev["mac"]
                 ip = dev["ip"]
-                authorized = mac in WHITELIST_DEVICES
+                authorized = mac.lower() in WHITELIST_DEVICES
+                custom_name = WHITELIST_DEVICES.get(mac.lower())
                 
-                # Phân loại để hiển thị icon và tên tương ứng trên web
-                if mac == "40:23:43:af:80:83":
-                    name = "Máy tính của tôi"
-                    icon = "fa-laptop"
-                    dtype = "laptop"
-                    vendor = "Intel/Realtek (Chính chủ)"
-                elif mac == "0e:0f:73:e7:61:9e":
-                    name = "Điện thoại của tôi"
-                    icon = "fa-mobile-screen-button"
-                    dtype = "phone"
-                    vendor = "Apple/Samsung"
-                elif ip.endswith(".1"):
-                    name = "Gateway Router (Trung tâm)"
-                    icon = "fa-wifi"
-                    dtype = "router"
-                    vendor = "Cisco/Linksys"
-                else:
-                    if authorized:
-                        name = WHITELIST_DEVICES[mac]
-                        icon = "fa-laptop"
-                        dtype = "unknown"
-                        vendor = "Authorized Device"
-                    else:
-                        name = "Thiết bị lạ (UNKNOWN DEVICE)"
-                        icon = "fa-user-secret"
-                        dtype = "unknown"
-                        vendor = "Generic Network Vendor"
+                # Xác định loại thiết bị tự động
+                info = identify_device_info(ip, mac, authorized, custom_name)
                 
                 results.append({
                     "ip": ip,
                     "mac": mac,
-                    "name": name,
-                    "type": dtype,
-                    "icon": icon,
-                    "vendor": vendor,
+                    "name": info["name"],
+                    "type": info["type"],
+                    "icon": info["icon"],
+                    "vendor": info["vendor"],
+                    "hostname": info["hostname"],
                     "authorized": authorized
                 })
             
@@ -447,26 +651,30 @@ def main():
     
     print("\n" + "=" * 60)
     print(f"    KET QUA QUET MANG (Tim thay {len(devices)} thiet bi dang online)")
-    print("=" * 60)
-    print(f"{'STT':<5}{'Địa chỉ IP':<18}{'Địa chỉ MAC':<20}{'Trạng thái / Tên thiết bị'}")
-    print("-" * 60)
+    print("=" * 75)
+    print(f"{'STT':<5}{'Địa chỉ IP':<16}{'Địa chỉ MAC':<20}{'Nhà sản xuất (Vendor)':<22}{'Trạng thái / Tên'}")
+    print("-" * 75)
     
     unauthorized_count = 0
     
     for idx, dev in enumerate(devices, start=1):
         mac = dev["mac"]
         ip = dev["ip"]
+        authorized = mac.lower() in WHITELIST_DEVICES
+        custom_name = WHITELIST_DEVICES.get(mac.lower())
         
-        # Kiểm tra xem MAC của thiết bị quét được có nằm trong Whitelist không
-        if mac in WHITELIST_DEVICES:
-            status = f" hơp lệ - {WHITELIST_DEVICES[mac]}"
-            print(f"{idx:<5}{ip:<18}{mac:<20}{status}")
+        info = identify_device_info(ip, mac, authorized, custom_name)
+        vendor_str = f"{info['vendor'][:20]:<22}"
+        
+        if authorized:
+            status = f"Hợp lệ - {info['name']}"
+            print(f"{idx:<5}{ip:<16}{mac:<20}{vendor_str}{status}")
         else:
-            status = " CẢNH BÁO: TRÁI PHÉP (UNKNOWN DEVICE)!"
-            print(f"{idx:<5}{ip:<18}{mac:<20}{status}")
+            status = f"CẢNH BÁO: TRÁI PHÉP ({info['name']})!"
+            print(f"{idx:<5}{ip:<16}{mac:<20}{vendor_str}{status}")
             unauthorized_count += 1
             
-    print("-" * 60)
+    print("-" * 75)
     if unauthorized_count > 0:
         print(f"[CẢNH BÁO NGUY HIỂM] Phát hiện {unauthorized_count} thiết bị TRÁI PHÉP kết nối vào mạng!")
         print(" -> Hãy kiểm tra lại địa chỉ MAC của thiết bị đó.")
