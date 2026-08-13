@@ -38,7 +38,32 @@ MOCK_MODE = False
 # Trạng thái giả lập chèn thiết bị lạ vào mạng quét thật (True = chèn thêm 1 thiết bị lạ)
 INJECT_ROGUE = False
 
-# 1. Danh sách Whitelist (Các địa chỉ MAC của thiết bị hợp lệ trong nhà bạn)
+# 1. Cấu hình Telegram Alerts cố định cho Backend Python
+# Điền Telegram Bot Token và Chat ID tại đây để tự động gửi thông báo từ server Python
+TELEGRAM_BOT_TOKEN = "8929036689:AAH9JVQ5Kn2HTbZLjQEiobwnOxUJdFP30XI"
+TELEGRAM_CHAT_ID = "6750367217"
+
+def send_telegram_alert(message):
+    """Gửi thông báo trực tiếp từ Backend Python đến Telegram"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    try:
+        import urllib.request
+        import urllib.parse
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = json.dumps({
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "HTML"
+        }).encode('utf-8')
+        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            return resp.status == 200
+    except Exception as e:
+        print(f"[!] Lỗi gửi Telegram từ Backend Python: {e}")
+        return False
+
+# 2. Danh sách Whitelist (Các địa chỉ MAC của thiết bị hợp lệ trong nhà bạn)
 WHITELIST_DEVICES = {
     "40:23:43:af:80:83": "Máy tính của tôi",
     "0e:0f:73:e7:61:9e": "Điện thoại của tôi"

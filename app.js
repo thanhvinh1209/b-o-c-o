@@ -1,6 +1,8 @@
 // ==========================================
-// CẤU HÌNH DỮ LIỆU THIẾT BỊ
+// CẤU HÌNH TELEGRAM CỐ ĐỊNH (FIXED CONFIG)
 // ==========================================
+const FIXED_TELEGRAM_BOT_TOKEN = '8929036689:AAH9JVQ5Kn2HTbZLjQEiobwnOxUJdFP30XI';
+const FIXED_TELEGRAM_CHAT_ID = '6750367217';
 
 // Đọc/Ghi URL Python Backend linh hoạt (mặc định localhost hoặc ngrok URL)
 const inputBackendUrl = document.getElementById('input-backend-url');
@@ -10,36 +12,17 @@ if (savedBackendUrl && inputBackendUrl) {
     inputBackendUrl.value = savedBackendUrl;
 }
 
-// Cấu hình Telegram Alerts
-const inputTgToken = document.getElementById('input-tg-token');
-const inputTgChatId = document.getElementById('input-tg-chatid');
-
-if (inputTgToken) {
-    inputTgToken.value = localStorage.getItem('tg_bot_token') || '';
-    inputTgToken.addEventListener('input', () => {
-        localStorage.setItem('tg_bot_token', inputTgToken.value.trim());
-    });
-}
-
-if (inputTgChatId) {
-    inputTgChatId.value = localStorage.getItem('tg_chat_id') || '';
-    inputTgChatId.addEventListener('input', () => {
-        localStorage.setItem('tg_chat_id', inputTgChatId.value.trim());
-    });
-}
-
+// Gửi thông báo Telegram tự động cố định từ Frontend JavaScript
 async function sendTelegramNotification(message) {
-    const token = (inputTgToken ? inputTgToken.value.trim() : null) || localStorage.getItem('tg_bot_token');
-    const chatId = (inputTgChatId ? inputTgChatId.value.trim() : null) || localStorage.getItem('tg_chat_id');
-    if (!token || !chatId) return;
+    if (!FIXED_TELEGRAM_BOT_TOKEN || !FIXED_TELEGRAM_CHAT_ID) return false;
 
     try {
-        const url = `https://api.telegram.org/bot${token}/sendMessage`;
+        const url = `https://api.telegram.org/bot${FIXED_TELEGRAM_BOT_TOKEN}/sendMessage`;
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                chat_id: chatId,
+                chat_id: FIXED_TELEGRAM_CHAT_ID,
                 text: message,
                 parse_mode: 'HTML'
             })
@@ -50,43 +33,6 @@ async function sendTelegramNotification(message) {
         return false;
     }
 }
-
-window.testTelegramConnection = async function() {
-    const token = inputTgToken ? inputTgToken.value.trim() : '';
-    const chatId = inputTgChatId ? inputTgChatId.value.trim() : '';
-
-    if (!token || !chatId) {
-        addLog('[TELEGRAM] ❌ Vui lòng nhập đủ Bot Token và Chat ID trước!', 'danger-log');
-        return;
-    }
-
-    localStorage.setItem('tg_bot_token', token);
-    localStorage.setItem('tg_chat_id', chatId);
-
-    const btn = document.getElementById('btn-tg-test');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang gửi...'; }
-
-    addLog('[TELEGRAM] Đang gửi tin nhắn thử nghiệm tới Telegram...', 'scan-log');
-
-    const ok = await sendTelegramNotification(`🔔 <b>IoT Guard - Kết nối thành công!</b>\n\nBot Telegram đã được cấu hình xong và đang hoạt động bình thường.\n✅ Từ giờ bạn sẽ nhận được thông báo realtime khi:\n• Phát hiện thiết bị xâm nhập\n• Cấp phép / hủy cấp phép thiết bị\n• Cô lập hoặc mở chặn thiết bị`);
-
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Gửi tin nhắn thử nghiệm'; }
-
-    if (ok) {
-        addLog('[TELEGRAM] ✅ Gửi thành công! Kiểm tra điện thoại của bạn ngay nhé.', 'success-log');
-    } else {
-        addLog('[TELEGRAM] ❌ Gửi thất bại! Kiểm tra lại Bot Token và Chat ID có đúng không.', 'danger-log');
-    }
-};
-
-window.toggleTelegramConfig = function() {
-    const body = document.getElementById('tg-config-body');
-    const icon = document.getElementById('tg-toggle-icon');
-    if (!body) return;
-    const isHidden = body.style.display === 'none';
-    body.style.display = isHidden ? 'flex' : 'none';
-    if (icon) icon.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
-};
 
 function getBackendUrl() {
     if (!inputBackendUrl) return "http://127.0.0.1:5000";
