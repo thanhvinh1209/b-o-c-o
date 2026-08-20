@@ -630,19 +630,16 @@ async function executeScan(isSilent = false) {
                             deviceListMessage += `${idx + 1}. ${statusEmoji} <b>${dev.ip}</b>\n   └ MAC: <code>${dev.mac}</code>\n   └ Thiết bị: ${dev.name} (${statusText})\n`;
                         });
 
-                        // Nếu đã từng quét trước đó và có dữ liệu cũ, đối chiếu phát hiện thiết bị MỚI KẾT NỐI hoặc NGẮT KẾT NỐI
+                        // Nếu đã từng quét trước đó và có dữ liệu cũ, đối chiếu phát hiện thiết bị MỚI KẾT NỐI LẠ
                         if (systemState.hasScanned && systemState.activeDevices.length > 0) {
                             const oldMacs = new Set(systemState.activeDevices.map(d => d.mac.toLowerCase()));
-                            const newMacs = new Set(nextActiveDevices.map(d => d.mac.toLowerCase()));
                             
-                            // 1. Phát hiện thiết bị mới kết nối
+                            // Phát hiện thiết bị mới kết nối
                             const newlyConnected = nextActiveDevices.filter(d => !oldMacs.has(d.mac.toLowerCase()) && d.type !== 'router');
                             newlyConnected.forEach(dev => {
-                                if (dev.authorized) {
-                                    addLog(`[AUTO MONITOR] Thiết bị mới kết nối (HỢP LỆ): <b>${dev.name}</b> (IP: ${dev.ip}, MAC: ${dev.mac})`, "success-log");
-                                    sendTelegramNotification(`🟢 <b>[THIẾT BỊ MỚI KẾT NỐI]</b>\nThiết bị hợp lệ vừa kết nối vào mạng:\n• <b>Tên:</b> ${dev.name}\n• <b>IP:</b> ${dev.ip}\n• <b>MAC:</b> ${dev.mac}`);
-                                } else {
-                                    addLog(`[CẢNH BÁO MỚI] Thiết bị mới kết nối (TRÁI PHÉP): <b>${dev.name}</b> (IP: ${dev.ip}, MAC: ${dev.mac})`, "danger-log");
+                                // Chỉ cảnh báo và thông báo nếu thiết bị đó là TRÁI PHÉP (kết nối lạ)
+                                if (!dev.authorized) {
+                                    addLog(`[CẢNH BÁO MỚI] Phát hiện thiết bị kết nối LẠ (TRÁI PHÉP): <b>${dev.name}</b> (IP: ${dev.ip}, MAC: ${dev.mac})`, "danger-log");
                                     playAlarmSound();
                                     modalIp.textContent = dev.ip;
                                     modalMac.textContent = dev.mac;
@@ -656,14 +653,6 @@ async function executeScan(isSilent = false) {
                                     
                                     sendTelegramNotification(`⚠️ <b>[CẢNH BÁO XÂM NHẬP MỚI]</b>\nPhát hiện thiết bị TRÁI PHÉP mới kết nối vào mạng IoT!\n\n• <b>IP:</b> ${dev.ip}\n• <b>MAC:</b> ${dev.mac}\n• <b>Nhà sản xuất:</b> ${dev.vendor}`);
                                 }
-                            });
-
-                            // 2. Phát hiện thiết bị đã ngắt kết nối (rời khỏi mạng)
-                            const disconnected = systemState.activeDevices.filter(d => !newMacs.has(d.mac.toLowerCase()) && d.type !== 'router');
-                            disconnected.forEach(dev => {
-                                const statusText = dev.authorized ? "Hợp lệ" : "Trái phép";
-                                addLog(`[AUTO MONITOR] Thiết bị đã ngắt kết nối (${statusText}): <b>${dev.name}</b> (IP: ${dev.ip}, MAC: ${dev.mac})`, "warning-log");
-                                sendTelegramNotification(`🔴 <b>[THIẾT BỊ NGẮT KẾT NỐI]</b>\nThiết bị đã ngắt kết nối hoặc rời khỏi mạng:\n• <b>Tên:</b> ${dev.name}\n• <b>IP:</b> ${dev.ip}\n• <b>MAC:</b> ${dev.mac}\n• <b>Trạng thái trước đó:</b> ${statusText}`);
                             });
                         }
 
