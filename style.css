@@ -896,10 +896,54 @@ body {
     20%, 40%, 60%, 80% { transform: translateX(6px); }
 }
 
-/* Media Queries for responsiveness */
+/* Backend URL Config Input Styling */
+.backend-url-config {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.backend-label {
+    font-size: 0.85rem;
+    color: #9ca3af;
+    white-space: nowrap;
+}
+
+#input-backend-url {
+    background: #111827;
+    border: 1px solid #374151;
+    color: #10b981;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    width: 240px;
+}
+
+/* Terminal Collapsed State */
+.terminal-body {
+    transition: all 0.3s ease-in-out;
+}
+
+.terminal-body.collapsed {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: none !important;
+    opacity: 0;
+    margin: 0;
+}
+
+/* Media Queries for Mobile Responsiveness */
 @media (max-width: 1024px) {
     .dashboard-grid {
         grid-template-columns: 1fr;
+        gap: 15px;
     }
     
     .network-visual-card {
@@ -913,17 +957,151 @@ body {
 
 @media (max-width: 768px) {
     body {
-        padding: 10px;
+        padding: 8px;
     }
+    
+    .app-container {
+        padding: 4px;
+    }
+
     .app-header {
         flex-direction: column;
-        gap: 15px;
+        align-items: stretch;
+        gap: 12px;
+        text-align: center;
+        padding: 14px 16px;
+    }
+
+    .logo-area {
+        justify-content: center;
+    }
+
+    .backend-url-config {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+    }
+
+    #input-backend-url {
+        width: 100%;
         text-align: center;
     }
+
+    .system-status-indicator {
+        justify-content: center;
+        width: 100%;
+    }
+
+    /* Mobile Controls: 1 nút 1 dòng hoặc cuộn dễ chạm */
+    .controls-wrapper {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .controls-wrapper .btn {
+        width: 100%;
+        min-height: 48px;
+        font-size: 15px;
+        justify-content: center;
+        touch-action: manipulation;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+
+    .stat-box {
+        padding: 10px 6px;
+    }
+
+    .stat-title {
+        font-size: 10px;
+    }
+
+    .stat-value {
+        font-size: 20px;
+    }
+
+    /* Bản đồ mạng di động co giãn tự nhiên */
+    .network-canvas {
+        min-height: 280px;
+        height: 320px;
+    }
+
+    .network-node {
+        width: 44px;
+        height: 44px;
+        font-size: 16px;
+    }
+
+    .network-node.router-node {
+        width: 54px;
+        height: 54px;
+        font-size: 20px;
+    }
+
+    .node-label {
+        font-size: 10px;
+        max-width: 75px;
+    }
+
     .education-content {
         grid-template-columns: 1fr;
     }
+
+    /* Bảng thiết bị cuộn ngang mượt mà trên di động */
+    .table-wrapper {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .device-table th, .device-table td {
+        padding: 10px 10px;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    .btn-action {
+        padding: 6px 10px;
+        font-size: 12px;
+        touch-action: manipulation;
+    }
+
+    /* Footer di động */
+    .app-footer {
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+    }
+}
+
+@media (max-width: 480px) {
     .stats-grid {
         grid-template-columns: 1fr;
+    }
+
+    .stat-box {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 14px;
+    }
+
+    .stat-title {
+        margin-bottom: 0;
+        font-size: 12px;
+    }
+
+    .stat-value {
+        font-size: 22px;
+    }
+
+    .modal-content {
+        padding: 20px 16px;
+        width: 95%;
+    }
+
+    .modal-actions {
+        flex-direction: column;
     }
 }

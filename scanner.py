@@ -326,18 +326,6 @@ def scan_network(ip_range, log_cb=None):
             log_cb(msg, category)
         print(msg)
 
-    if MOCK_MODE:
-        log("[*] CHẾ ĐỘ GIẢ LẬP: Đang mô phỏng quét mạng...", "scan-log")
-        time.sleep(1.5)  # Tạo độ trễ quét mạng cho giống thật
-        return [
-            {"ip": "192.168.1.1", "mac": "00:11:22:33:44:55"},     # Hợp lệ (Router)
-            {"ip": "192.168.1.127", "mac": "40:23:43:af:80:83"},   # Hợp lệ (Máy tính của bạn)
-            {"ip": "192.168.1.50", "mac": "aa:bb:cc:dd:ee:ff"},    # Hợp lệ (Điện thoại)
-            {"ip": "192.168.1.100", "mac": "24:fc:e5:aa:bb:cc"},   # Hợp lệ (Smart TV)
-            {"ip": "192.168.1.150", "mac": "99:88:77:66:55:44"},   # TRÁI PHÉP (Thiết bị lạ 1)
-            {"ip": "192.168.1.180", "mac": "11:22:33:aa:bb:cc"}    # TRÁI PHÉP (Thiết bị lạ 2)
-        ]
-
     log(f"[*] Đang khởi tạo quét mạng trên dải IP: {ip_range}...", "scan-log")
     
     # Tự động tìm card mạng đang kết nối Internet thật (tránh card ảo VMware, VirtualBox, v.v.)
@@ -408,15 +396,19 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
         
         if self.path.startswith('/scan'):
             print("\n[HTTP] Nhận yêu cầu quét mạng từ Web Dashboard...")
+            self.close_connection = True  # Đóng kết nối để tránh lỗi Socket Keep-Alive của Python http.server
             
             # Thiết lập header cho SSE (Server-Sent Events) để stream logs thời gian thực
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
+            self.send_header("Connection", "close")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             
+            class ClientDisconnected(Exception):
+                pass
+
             def send_event(event_type, message_or_data, level="system-log"):
                 try:
                     if event_type == "log":
@@ -425,99 +417,121 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                         payload = json.dumps({"type": event_type, "data": message_or_data})
                     self.wfile.write(f"data: {payload}\n\n".encode('utf-8'))
                     self.wfile.flush()
-                except Exception as e:
-                    print(f"[!] Lỗi khi gửi log stream: {e}")
+                    return True
+                except Exception:
+                    return False
             
             def log_callback(msg, category="system-log"):
-                send_event("log", msg, category)
+                if not send_event("log", msg, category):
+                    raise ClientDisconnected()
+            
+            try:
+                if not send_event("log", "============================================================", "system-log") or \
+                   not send_event("log", "    HE THONG PHAT HIEN THIET BI IOT TRAI PHEP", "system-log") or \
+                   not send_event("log", "============================================================", "system-log"):
+                    raise ClientDisconnected()
                 
-            send_event("log", "============================================================", "system-log")
-            send_event("log", "    HE THONG PHAT HIEN THIET BI IOT TRAI PHEP", "system-log")
-            send_event("log", "============================================================", "system-log")
-            
-            ip_range, local_ip = get_local_ip_range()
-            send_event("log", f"[*] IP máy tính của bạn: {local_ip}", "system-log")
-            send_event("log", f"[*] Dải mạng nội bộ: {ip_range}", "system-log")
-            send_event("log", f"[*] Số lượng thiết bị trong Whitelist: {len(WHITELIST_DEVICES)} thiết bị.", "system-log")
-            send_event("log", "------------------------------------------------------------", "system-log")
-            
-            # Quét mạng và truyền callback để stream logs về trình duyệt theo thời gian thực
-            devices = scan_network(ip_range, log_cb=log_callback)
-            
-            # Nếu chế độ tiêm thiết bị lạ được kích hoạt, chèn thêm 1 thiết bị lạ vào danh sách quét thật
-            if INJECT_ROGUE:
-                send_event("log", "[*] Đang chèn thiết bị lạ giả lập vào kết quả quét thật...", "warning-log")
-                # Tránh chèn trùng nếu đã có sẵn trong danh sách
-                if not any(d["mac"] == "bc:d1:d3:ef:22:90" for d in devices):
-                    devices.append({
-                        "ip": "192.168.1.189",
-                        "mac": "bc:d1:d3:ef:22:90"
+                ip_range, local_ip = get_local_ip_range()
+                if not send_event("log", f"[*] IP máy tính của bạn: {local_ip}", "system-log") or \
+                   not send_event("log", f"[*] Dải mạng nội bộ: {ip_range}", "system-log") or \
+                   not send_event("log", f"[*] Số lượng thiết bị trong Whitelist: {len(WHITELIST_DEVICES)} thiết bị.", "system-log") or \
+                   not send_event("log", "------------------------------------------------------------", "system-log"):
+                    raise ClientDisconnected()
+                
+                # Quét mạng và truyền callback để stream logs về trình duyệt theo thời gian thực
+                devices = scan_network(ip_range, log_cb=log_callback)
+                
+                # Nếu chế độ tiêm thiết bị lạ được kích hoạt, chèn thêm 1 thiết bị lạ vào danh sách quét thật
+                if INJECT_ROGUE:
+                    if not send_event("log", "[*] Đang chèn thiết bị lạ giả lập vào kết quả quét thật...", "warning-log"):
+                        raise ClientDisconnected()
+                    # Tránh chèn trùng nếu đã có sẵn trong danh sách
+                    if not any(d["mac"] == "bc:d1:d3:ef:22:90" for d in devices):
+                        devices.append({
+                            "ip": "192.168.1.189",
+                            "mac": "bc:d1:d3:ef:22:90"
+                        })
+                
+                # Khớp các thiết bị quét được với thông tin mô tả chi tiết từ hàm Fingerprinting
+                results = []
+                if not send_event("log", "[*] Đang phân tích thông tin thiết bị (OUI Lookup, Hostname, Ports)...", "scan-log"):
+                    raise ClientDisconnected()
+                    
+                for dev in devices:
+                    mac = dev["mac"]
+                    ip = dev["ip"]
+                    authorized = mac.lower() in WHITELIST_DEVICES
+                    custom_name = WHITELIST_DEVICES.get(mac.lower())
+                    
+                    # Xác định loại thiết bị tự động
+                    info = identify_device_info(ip, mac, authorized, custom_name)
+                    
+                    # Thiết bị Gateway Router trung tâm luôn luôn hợp lệ
+                    if info["type"] == "router":
+                        authorized = True
+                    
+                    results.append({
+                        "ip": ip,
+                        "mac": mac,
+                        "name": info["name"],
+                        "type": info["type"],
+                        "icon": info["icon"],
+                        "vendor": info["vendor"],
+                        "hostname": info["hostname"],
+                        "authorized": authorized
                     })
-            
-            # Khớp các thiết bị quét được với thông tin mô tả chi tiết từ hàm Fingerprinting
-            results = []
-            send_event("log", "[*] Đang phân tích thông tin thiết bị (OUI Lookup, Hostname, Ports)...", "scan-log")
-            for dev in devices:
-                mac = dev["mac"]
-                ip = dev["ip"]
-                authorized = mac.lower() in WHITELIST_DEVICES
-                custom_name = WHITELIST_DEVICES.get(mac.lower())
                 
-                # Xác định loại thiết bị tự động
-                info = identify_device_info(ip, mac, authorized, custom_name)
+                if not send_event("log", "============================================================", "system-log") or \
+                   not send_event("log", f"    KET QUA QUET MANG (Tim thay {len(results)} thiet bi dang online)", "system-log") or \
+                   not send_event("log", "============================================================", "system-log") or \
+                   not send_event("log", f"{'STT':<5}{'Địa chỉ IP':<18}{'Địa chỉ MAC':<20}{'Trạng thái / Tên thiết bị'}", "system-log") or \
+                   not send_event("log", "------------------------------------------------------------", "system-log"):
+                    raise ClientDisconnected()
                 
-                results.append({
-                    "ip": ip,
-                    "mac": mac,
-                    "name": info["name"],
-                    "type": info["type"],
-                    "icon": info["icon"],
-                    "vendor": info["vendor"],
-                    "hostname": info["hostname"],
-                    "authorized": authorized
-                })
-            
-            send_event("log", "============================================================", "system-log")
-            send_event("log", f"    KET QUA QUET MANG (Tim thay {len(results)} thiet bi dang online)", "system-log")
-            send_event("log", "============================================================", "system-log")
-            send_event("log", f"{'STT':<5}{'Địa chỉ IP':<18}{'Địa chỉ MAC':<20}{'Trạng thái / Tên thiết bị'}", "system-log")
-            send_event("log", "------------------------------------------------------------", "system-log")
-            
-            unauthorized_count = 0
-            for idx, dev in enumerate(results, start=1):
-                mac = dev["mac"]
-                ip = dev["ip"]
-                authorized = dev["authorized"]
-                num_str = f"{idx:<5}"
-                ip_str = f"{ip:<18}"
-                mac_str = f"{mac:<20}"
+                unauthorized_count = 0
+                for idx, dev in enumerate(results, start=1):
+                    mac = dev["mac"]
+                    ip = dev["ip"]
+                    authorized = dev["authorized"]
+                    num_str = f"{idx:<5}"
+                    ip_str = f"{ip:<18}"
+                    mac_str = f"{mac:<20}"
+                    
+                    if authorized:
+                        status = f"hợp lệ - {dev['name']}"
+                        if not send_event("log", f"{num_str}{ip_str}{mac_str}{status}", "success-log"):
+                            raise ClientDisconnected()
+                    else:
+                        status = "CẢNH BÁO: TRÁI PHÉP (UNKNOWN DEVICE)!"
+                        if not send_event("log", f"{num_str}{ip_str}{mac_str}{status}", "alert-log"):
+                            raise ClientDisconnected()
+                        unauthorized_count += 1
                 
-                if authorized:
-                    status = f"hợp lệ - {dev['name']}"
-                    send_event("log", f"{num_str}{ip_str}{mac_str}{status}", "success-log")
+                if not send_event("log", "------------------------------------------------------------", "system-log"):
+                    raise ClientDisconnected()
+                if unauthorized_count > 0:
+                    if not send_event("log", f"[CẢNH BÁO NGUY HIỂM] Phát hiện {unauthorized_count} thiết bị TRÁI PHÉP kết nối vào mạng!", "danger-log") or \
+                       not send_event("log", " -> Hãy kiểm tra lại địa chỉ MAC của thiết bị đó.", "warning-log"):
+                        raise ClientDisconnected()
                 else:
-                    status = "CẢNH BÁO: TRÁI PHÉP (UNKNOWN DEVICE)!"
-                    send_event("log", f"{num_str}{ip_str}{mac_str}{status}", "alert-log")
-                    unauthorized_count += 1
-            
-            send_event("log", "------------------------------------------------------------", "system-log")
-            if unauthorized_count > 0:
-                send_event("log", f"[CẢNH BÁO NGUY HIỂM] Phát hiện {unauthorized_count} thiết bị TRÁI PHÉP kết nối vào mạng!", "danger-log")
-                send_event("log", " -> Hãy kiểm tra lại địa chỉ MAC của thiết bị đó.", "warning-log")
-            else:
-                send_event("log", "[AN TOÀN] Không phát hiện thiết bị lạ nào trong mạng nội bộ.", "success-log")
-            send_event("log", "============================================================", "system-log")
-            
-            response_data = {
-                "local_ip": local_ip,
-                "ip_range": ip_range,
-                "devices": results,
-                "whitelist": WHITELIST_DEVICES
-            }
-            
-            # Gửi kết quả quét cuối cùng để vẽ bản đồ
-            send_event("result", response_data)
-            print(f"[HTTP] Đã gửi kết quả {len(results)} thiết bị dạng stream về Web Dashboard.")
+                    if not send_event("log", "[AN TOÀN] Không phát hiện thiết bị lạ nào trong mạng nội bộ.", "success-log"):
+                        raise ClientDisconnected()
+                if not send_event("log", "============================================================", "system-log"):
+                    raise ClientDisconnected()
+                
+                response_data = {
+                    "local_ip": local_ip,
+                    "ip_range": ip_range,
+                    "devices": results,
+                    "whitelist": WHITELIST_DEVICES
+                }
+                
+                # Gửi kết quả quét cuối cùng để vẽ bản đồ
+                if not send_event("result", response_data):
+                    raise ClientDisconnected()
+                print(f"[HTTP] Đã gửi kết quả {len(results)} thiết bị dạng stream về Web Dashboard.")
+            except ClientDisconnected:
+                print("[*] Đã dừng quét mạng vì trình duyệt đóng kết nối (Client Disconnected).")
             
         elif self.path.startswith('/simulate_rogue'):
             INJECT_ROGUE = True
@@ -689,6 +703,11 @@ def main():
         custom_name = WHITELIST_DEVICES.get(mac.lower())
         
         info = identify_device_info(ip, mac, authorized, custom_name)
+        
+        # Thiết bị Gateway Router trung tâm luôn luôn hợp lệ
+        if info["type"] == "router":
+            authorized = True
+            
         vendor_str = f"{info['vendor'][:20]:<22}"
         
         if authorized:

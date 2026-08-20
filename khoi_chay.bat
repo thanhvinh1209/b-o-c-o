@@ -31,8 +31,8 @@ if '%errorlevel%' NEQ '0' (
 
     echo [*] Dang khoi chay Python Backend am tham bang lenh: %PYTHON_CMD% scanner.py...
     
-    :: Khoi chay scanner.py va an cua so xuong taskbar
-    start "IoT_Python_Backend" /min %PYTHON_CMD% scanner.py
+    :: Khoi chay scanner.py song song (hien thi cua so Terminal log)
+    start "IoT_Python_Backend" %PYTHON_CMD% scanner.py
     
     echo [*] Dang doi API Server khoi dong (3 giay)...
     timeout /t 3 /nobreak >nul
